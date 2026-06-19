@@ -394,7 +394,39 @@
                                     </div>
                                 </div>
                                 
-                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: rgba(0,0,0,0.15); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.02); font-size: 9px; color: #ddd; text-align: center;">
+                                <div class="detailed-stats-section" style="margin-top: 12px; padding: 10px; border-radius: 8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); font-size: 10px; text-align: left; line-height: 1.6;">
+                                    <h4 style="font-size: 10px; color: #fff; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 4px;">Детайлни Финансови Данни</h4>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ddd;">
+                                        <span>Събрани входове (Общо):</span>
+                                        <strong id="admin-stat-fees-collected">€0.00</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ddd;">
+                                        <span>Входове от турнири:</span>
+                                        <strong id="admin-stat-tournament-fees">€0.00</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ddd;">
+                                        <span>Входове от дуели:</span>
+                                        <strong id="admin-stat-duel-fees">€0.00</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ddd;">
+                                        <span>Парични награди за реални юзъри:</span>
+                                        <strong id="admin-stat-real-cash-payouts" style="color: var(--accent);">€0.00</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ddd;">
+                                        <span>Физически награди за реални юзъри:</span>
+                                        <strong id="admin-stat-real-physical-payouts" style="color: var(--primary);">€0.00</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px; color: #ddd;">
+                                        <span>Спестено от победи на ботове:</span>
+                                        <strong id="admin-stat-bot-savings" style="color: var(--success);">€0.00</strong>
+                                    </div>
+                                    <div style="display: flex; justify-content: space-between; padding-top: 4px; border-top: 1px dashed rgba(255,255,255,0.1); margin-top: 6px; color: #fff;">
+                                        <span>Чиста печалба за приложението:</span>
+                                        <strong id="admin-stat-net-app-earnings" style="color: var(--success); font-size: 11px;">€0.00</strong>
+                                    </div>
+                                </div>
+                                
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: rgba(0,0,0,0.15); padding: 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.02); font-size: 9px; color: #ddd; text-align: center; margin-top: 10px;">
                                     <div>
                                         <span id="admin-stat-active-rooms" style="font-weight: bold; color: #fff; display: block; font-size: 11px;">0</span>
                                         <span style="color: var(--text-muted); font-size: 8px;">Активни стаи</span>
@@ -721,7 +753,14 @@
                                 <div class="form-group">
                                     <label for="duel-entry-fee">Залог за участие (€)</label>
                                     <input type="number" id="duel-entry-fee" class="form-select" placeholder="напр. 5.00" min="0.50" step="0.10" value="2.00" required style="width: 100%; height: 40px; background: rgba(0,0,0,0.3); border: 1px solid var(--border-light); border-radius: 8px; color: #fff; padding: 0 10px; outline: none; font-size: 14px;">
-                                    <p style="font-size: 9px; color: var(--text-muted); margin-top: 4px;">Наградата е 1.8 пъти залога (10% такса за апликацията).</p>
+                                    <div class="quick-amounts-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px;">
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setDuelFee(2)" style="font-size: 10px; padding: 5px 0; background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); border-radius: 6px; color: #fff; cursor: pointer;">2 €</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setDuelFee(5)" style="font-size: 10px; padding: 5px 0; background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); border-radius: 6px; color: #fff; cursor: pointer;">5 €</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setDuelFee(10)" style="font-size: 10px; padding: 5px 0; background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); border-radius: 6px; color: #fff; cursor: pointer;">10 €</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setDuelFee(20)" style="font-size: 10px; padding: 5px 0; background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); border-radius: 6px; color: #fff; cursor: pointer;">20 €</button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setDuelFee(50)" style="font-size: 10px; padding: 5px 0; background: rgba(255,255,255,0.05); border: 1px solid var(--border-light); border-radius: 6px; color: #fff; cursor: pointer; font-weight: bold; border-color: var(--accent);">50 €</button>
+                                    </div>
+                                    <p style="font-size: 9px; color: var(--text-muted); margin-top: 6px;">Наградата е 1.8 пъти залога (10% такса за апликацията).</p>
                                 </div>
                                 
                                 <button type="submit" class="btn btn-accent w-100" style="margin-top: 15px;">

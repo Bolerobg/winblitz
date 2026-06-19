@@ -67,67 +67,146 @@ document.addEventListener("DOMContentLoaded", () => {
     bindAdminPreviewEvents();
 });
 
-// Load state from localStorage or initialize defaults
-function loadState() {
+// Helper to call backend with user phone header
+async function apiFetch(url, options = {}) {
+    if (!options.headers) options.headers = {};
+    if (state.user && state.user.phone) {
+        options.headers['X-User-Phone'] = state.user.phone;
+    }
+    if (options.body && !(options.body instanceof FormData) && !options.headers['Content-Type']) {
+        options.headers['Content-Type'] = 'application/json';
+    }
+    return fetch(url, options);
+}
+
+// Helper to map DB snake_case columns to camelCase client properties
+function mapLobbyToClient(lobby) {
+    if (!lobby) return null;
+    return {
+        id: lobby.id,
+        prizeName: lobby.prize_name !== undefined ? lobby.prize_name : lobby.prizeName,
+        prizeValue: lobby.prize_value !== undefined ? parseFloat(lobby.prize_value) : lobby.prizeValue,
+        ticketPrice: lobby.ticket_price !== undefined ? parseFloat(lobby.ticket_price) : lobby.ticketPrice,
+        maxPlayers: lobby.max_players !== undefined ? lobby.max_players : lobby.maxPlayers,
+        productType: lobby.product_type !== undefined ? lobby.product_type : lobby.productType,
+        gameType: lobby.game_type !== undefined ? lobby.game_type : lobby.gameType,
+        image: lobby.image !== undefined ? lobby.image : lobby.image,
+        productUrl: lobby.product_url !== undefined ? lobby.product_url : lobby.productUrl,
+        status: lobby.status !== undefined ? lobby.status : lobby.status,
+        players: typeof lobby.players === 'string' ? JSON.parse(lobby.players) : lobby.players || [],
+        winner: lobby.winner !== undefined ? lobby.winner : lobby.winner,
+        isFriendDuel: lobby.is_friend_duel !== undefined ? lobby.is_friend_duel : lobby.isFriendDuel,
+        isPractice: lobby.is_practice !== undefined ? lobby.is_practice : lobby.isPractice,
+        completedAt: lobby.completed_at !== undefined ? lobby.completed_at : lobby.completedAt,
+        archiveId: lobby.archive_id !== undefined ? (typeof lobby.archive_id === 'string' ? parseInt(lobby.archive_id) : lobby.archive_id) : lobby.archiveId,
+        deliveryStatus: lobby.delivery_status !== undefined ? lobby.delivery_status : lobby.deliveryStatus
+    };
+}
+
+// Helper to set private duel fee manually or from quick options
+function setDuelFee(amount) {
+    const input = document.getElementById("duel-entry-fee");
+    if (input) {
+        input.value = amount.toFixed(2);
+    }
+}
+
+// Load state from localStorage or initialize defaults, synced with backend if online
+async function loadState() {
     const savedState = localStorage.getItem("winblitz_state");
     if (savedState) {
         try {
             state = JSON.parse(savedState);
             state.game.timerInterval = null;
-            if (!state.completedTournaments) {
-                state.completedTournaments = [];
-            }
-            if (state.practiceModeActive === undefined) state.practiceModeActive = false;
-            if (state.lastSpinDate === undefined) state.lastSpinDate = null;
-            if (state.practiceGamesPlayed === undefined) state.practiceGamesPlayed = 0;
-            if (state.xp === undefined) state.xp = 0;
-            if (state.league === undefined) state.league = "Бронз";
-            if (state.clanId === undefined) state.clanId = null;
-            if (state.unlockedAvatars === undefined) state.unlockedAvatars = ["👤"];
-            if (state.activeAvatar === undefined) state.activeAvatar = "👤";
-            if (state.activeTheme === undefined) state.activeTheme = "default";
-            if (state.unlockedThemes === undefined) state.unlockedThemes = ["default"];
-            if (state.lootBoxesOwned === undefined) state.lootBoxesOwned = 0;
-            if (state.unlockedAchievements === undefined) state.unlockedAchievements = [];
-            if (state.dailyQuests === undefined || state.dailyQuests.length === 0) {
-                state.dailyQuests = generateDailyQuests();
-            }
-            if (state.balance === undefined || state.balance < 100.00) {
-                state.balance = 100.00;
-                if (!state.walletHistory) state.walletHistory = [];
-                state.walletHistory.unshift({
-                    desc: "Демо Бонус (За големи залози)",
-                    amount: 80.00,
-                    type: "deposit",
-                    date: getFormattedDate()
-                });
-            }
-            
-            if (!state.user) {
-                state.user = {
-                    phone: null,
-                    fullname: null,
-                    city: null,
-                    address: null,
-                    verified: false,
-                    gamesPlayed: 0,
-                    gamesWon: 0,
-                    prizesWonValue: 0,
-                    wonPrizesList: []
-                };
-            } else {
-                // Ensure new fields exist on loaded states
-                if (state.user.fullname === undefined) state.user.fullname = null;
-                if (state.user.city === undefined) state.user.city = null;
-                if (state.user.address === undefined) state.user.address = null;
-            }
         } catch (e) {
-            console.error("Error parsing saved state, resetting...", e);
-            resetStateToDefault();
+            console.error(e);
         }
-    } else {
-        resetStateToDefault();
     }
+    
+    // Apply local state validation defaults
+    if (!state.completedTournaments) state.completedTournaments = [];
+    if (state.practiceModeActive === undefined) state.practiceModeActive = false;
+    if (state.lastSpinDate === undefined) state.lastSpinDate = null;
+    if (state.practiceGamesPlayed === undefined) state.practiceGamesPlayed = 0;
+    if (state.xp === undefined) state.xp = 0;
+    if (state.league === undefined) state.league = "Бронз";
+    if (state.clanId === undefined) state.clanId = null;
+    if (state.unlockedAvatars === undefined) state.unlockedAvatars = ["👤"];
+    if (state.activeAvatar === undefined) state.activeAvatar = "👤";
+    if (state.activeTheme === undefined) state.activeTheme = "default";
+    if (state.unlockedThemes === undefined) state.unlockedThemes = ["default"];
+    if (state.lootBoxesOwned === undefined) state.lootBoxesOwned = 0;
+    if (state.unlockedAchievements === undefined) state.unlockedAchievements = [];
+    if (state.dailyQuests === undefined || state.dailyQuests.length === 0) {
+        state.dailyQuests = generateDailyQuests();
+    }
+    if (state.balance === undefined) state.balance = 100.00;
+    if (!state.user) {
+        state.user = { phone: null, fullname: null, city: null, address: null, verified: false, gamesPlayed: 0, gamesWon: 0, prizesWonValue: 0, wonPrizesList: [] };
+    }
+
+    try {
+        // 1. Sync lobbies
+        const lobbiesRes = await fetch('/api/lobbies');
+        if (lobbiesRes.ok) {
+            const lobbiesData = await lobbiesRes.json();
+            state.lobbies = lobbiesData.map(mapLobbyToClient);
+        }
+        
+        // 2. Sync user state
+        if (state.user && state.user.phone) {
+            const res = await apiFetch('/api/user/state');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.user) {
+                    state.balance = parseFloat(data.user.balance);
+                    state.xp = parseInt(data.user.xp);
+                    state.clanId = data.user.clan_id;
+                    state.activeAvatar = data.user.active_avatar;
+                    state.activeTheme = data.user.active_theme;
+                    state.unlockedAvatars = data.user.unlocked_avatars || ['👤'];
+                    state.unlockedThemes = data.user.unlocked_themes || ['default'];
+                    state.lootBoxesOwned = data.user.loot_boxes_owned || 0;
+                    state.unlockedAchievements = data.user.unlocked_achievements || [];
+                    state.dailyQuests = typeof data.user.daily_quests === 'string' ? JSON.parse(data.user.daily_quests) : data.user.daily_quests || [];
+                    state.walletHistory = data.walletHistory || [];
+                    state.completedTournaments = (data.completedGames || []).map(mapLobbyToClient);
+                    state.lastSpinDate = data.user.last_spin_date || null;
+                    
+                    let played = 0;
+                    let won = 0;
+                    let wonVal = 0;
+                    state.completedTournaments.forEach(game => {
+                        if (!game.isPractice) {
+                            played++;
+                            if (game.winner === "Вие") {
+                                won++;
+                                wonVal += game.prizeValue;
+                            }
+                        }
+                    });
+                    
+                    state.user = {
+                        phone: data.user.phone,
+                        fullname: data.user.fullname,
+                        city: data.user.city,
+                        address: data.user.address,
+                        verified: data.user.verified,
+                        gamesPlayed: played,
+                        gamesWon: won,
+                        prizesWonValue: wonVal,
+                        wonPrizesList: data.wonPrizes || []
+                    };
+                }
+            }
+        }
+    } catch (err) {
+        console.warn("Backend connection failed, running in offline mode:", err);
+    }
+    
+    applyActiveTheme();
+    renderLobbies();
+    updateUI();
 }
 
 function resetStateToDefault() {
@@ -379,7 +458,7 @@ function openLobbyDetail(lobbyId) {
 }
 
 // --- Buy Ticket (Bundle Purchase) ---
-function purchaseTicket() {
+async function purchaseTicket() {
     const lobby = state.lobbies.find(l => l.id === state.currentLobbyId);
     if (!lobby) return;
 
@@ -394,61 +473,101 @@ function purchaseTicket() {
             alert("Нямате достатъчно баланс! Захранете го от левия контролен панел.");
             return;
         }
+    }
 
-        // Deduct balance
-        state.balance -= lobby.ticketPrice;
+    try {
+        const response = await apiFetch('/api/lobbies/join', {
+            method: 'POST',
+            body: JSON.stringify({ lobbyId: lobby.id, isPractice: state.practiceModeActive })
+        });
         
-        // Add transaction to history
-        state.walletHistory.unshift({
-            desc: `Покупка тапет + билет (Турнир #${lobby.id})`,
-            amount: lobby.ticketPrice,
-            type: "withdraw",
-            date: getFormattedDate()
-        });
-    } else {
-        // Practice Mode: free log
-        state.walletHistory.unshift({
-            desc: `Свободна тренировка (Турнир #${lobby.id})`,
-            amount: 0,
-            type: "withdraw",
-            date: getFormattedDate()
-        });
-    }
-
-    // Set practice status on active lobby
-    lobby.isPractice = state.practiceModeActive;
-
-    // Add user to the lobby
-    lobby.players.push({
-        name: "Вие (Участник)",
-        isMe: true,
-        time: null,
-        errors: 0,
-        finished: false
-    });
-
-    saveState();
-    updateUI();
-    renderLobbies();
-
-    // Award loot box if real game
-    if (!state.practiceModeActive) {
-        state.lootBoxesOwned = (state.lootBoxesOwned || 0) + 1;
-        setTimeout(() => {
-            if (confirm("Честито! Спечелихте подаръчна Мистериозна Кутия! Искате ли да я отворите сега?")) {
-                openLootBoxScreen();
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Sync user state and lobby state returned from backend
+            if (data.user) {
+                state.balance = parseFloat(data.user.balance);
+                state.lootBoxesOwned = data.user.loot_boxes_owned || 0;
             }
-        }, 600);
-    }
-
-    // Go to waiting lobby
-    openWaitingLobby(lobby);
-
-    // Auto-bot trigger simulation: after 3 seconds, a bot joins if lobby is not full (except for private duels)
-    if (!lobby.isFriendDuel) {
-        setTimeout(() => {
-            simulateBotJoin(lobby.id);
-        }, 2500);
+            
+            const updatedLobby = mapLobbyToClient(data.lobby);
+            const index = state.lobbies.findIndex(l => l.id === lobby.id);
+            if (index !== -1) {
+                state.lobbies[index] = updatedLobby;
+            }
+            
+            // Re-render UI
+            saveState();
+            await loadState(); // Reload fully to sync history etc
+            
+            // Award loot box if real game
+            if (!state.practiceModeActive) {
+                setTimeout(() => {
+                    if (confirm("Честито! Спечелихте подаръчна Мистериозна Кутия! Искате ли да я отворите сега?")) {
+                        openLootBoxScreen();
+                    }
+                }, 600);
+            }
+            
+            // Go to waiting lobby
+            openWaitingLobby(updatedLobby);
+            
+            // Auto-bot trigger simulation: after 2.5 seconds, a bot joins if lobby is not full
+            if (!updatedLobby.isFriendDuel) {
+                setTimeout(() => {
+                    simulateBotJoin(updatedLobby.id);
+                }, 2500);
+            }
+        } else {
+            const err = await response.json();
+            alert("Грешка при покупка: " + err.error);
+        }
+    } catch (err) {
+        console.error("purchaseTicket error:", err);
+        // Fallback for offline mode
+        if (!state.practiceModeActive) {
+            state.balance -= lobby.ticketPrice;
+            state.walletHistory.unshift({
+                desc: `Покупка тапет + билет (Турнир #${lobby.id})`,
+                amount: lobby.ticketPrice,
+                type: "withdraw",
+                date: getFormattedDate()
+            });
+        } else {
+            state.walletHistory.unshift({
+                desc: `Свободна тренировка (Турнир #${lobby.id})`,
+                amount: 0,
+                type: "withdraw",
+                date: getFormattedDate()
+            });
+        }
+        lobby.isPractice = state.practiceModeActive;
+        if (!lobby.players.some(p => p.isMe)) {
+            lobby.players.push({
+                name: "Вие (Участник)",
+                isMe: true,
+                time: null,
+                errors: 0,
+                finished: false
+            });
+        }
+        saveState();
+        updateUI();
+        renderLobbies();
+        if (!state.practiceModeActive) {
+            state.lootBoxesOwned = (state.lootBoxesOwned || 0) + 1;
+            setTimeout(() => {
+                if (confirm("Честито! Спечелихте подаръчна Мистериозна Кутия! Искате ли да я отворите сега?")) {
+                    openLootBoxScreen();
+                }
+            }, 600);
+        }
+        openWaitingLobby(lobby);
+        if (!lobby.isFriendDuel) {
+            setTimeout(() => {
+                simulateBotJoin(lobby.id);
+            }, 2500);
+        }
     }
 }
 
@@ -497,29 +616,51 @@ function openWaitingLobby(lobby) {
 }
 
 // --- Simulate Bot Joins ---
-function simulateBotJoin(lobbyId) {
+async function simulateBotJoin(lobbyId) {
     const lobby = state.lobbies.find(l => l.id === lobbyId);
     if (!lobby || lobby.status === "finished" || lobby.players.length >= lobby.maxPlayers) return;
 
     const botNames = ["Христо В.", "Димитър К.", "Теодора А.", "Стефан Р.", "Мария Г."];
-    // Find a name that hasn't joined yet
     let newName = botNames.find(name => !lobby.players.some(p => p.name === name));
     if (!newName) newName = `Играч_${Math.floor(Math.random() * 100)}`;
 
-    lobby.players.push({
-        name: newName,
-        isMe: false,
-        time: null,
-        errors: 0,
-        finished: false
-    });
-
-    saveState();
-    renderLobbies();
-
-    // If user is currently looking at this waiting lobby, refresh it
-    if (state.currentLobbyId === lobbyId && document.getElementById("waiting-lobby-screen").classList.contains("active")) {
-        openWaitingLobby(lobby);
+    try {
+        const response = await apiFetch('/api/lobbies/bot-join', {
+            method: 'POST',
+            body: JSON.stringify({ lobbyId, botName: newName })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const updatedLobby = mapLobbyToClient(data.lobby);
+            
+            const index = state.lobbies.findIndex(l => l.id === lobbyId);
+            if (index !== -1) {
+                state.lobbies[index] = updatedLobby;
+            }
+            
+            saveState();
+            renderLobbies();
+            
+            if (state.currentLobbyId === lobbyId && document.getElementById("waiting-lobby-screen").classList.contains("active")) {
+                openWaitingLobby(updatedLobby);
+            }
+        }
+    } catch (err) {
+        console.error("simulateBotJoin error:", err);
+        // Fallback for offline mode
+        lobby.players.push({
+            name: newName,
+            isMe: false,
+            time: null,
+            errors: 0,
+            finished: false
+        });
+        saveState();
+        renderLobbies();
+        if (state.currentLobbyId === lobbyId && document.getElementById("waiting-lobby-screen").classList.contains("active")) {
+            openWaitingLobby(lobby);
+        }
     }
 }
 
@@ -1398,155 +1539,189 @@ function finishGame() {
     
     const finalTimeInSeconds = (state.game.elapsedTime / 1000).toFixed(2);
     
-    // Save my score into the active lobby
-    const lobby = state.lobbies.find(l => l.id === state.currentLobbyId);
-    if (lobby) {
-        const me = lobby.players.find(p => p.isMe);
-        if (me) {
-            me.time = parseFloat(finalTimeInSeconds);
-            me.errors = state.game.errors;
-            me.finished = true;
-        }
-
-        // Simulate other players finishing times
-        lobby.players.forEach(p => {
-            if (!p.isMe) {
-                // Bots times are generated: speed between 4.5 and 8 seconds, + random errors
-                const botBaseTime = (Math.random() * 3.5 + 4.2).toFixed(2);
-                const botErrors = Math.floor(Math.random() * 2);
-                const botPenalty = botErrors * 3;
-                p.time = parseFloat(botBaseTime) + botPenalty;
-                p.errors = botErrors;
-                p.finished = true;
+    // Attempt backend sync if online
+    const apiCallPromise = (async () => {
+        try {
+            const response = await apiFetch('/api/lobbies/finish', {
+                method: 'POST',
+                body: JSON.stringify({
+                    lobbyId: state.currentLobbyId,
+                    finalTime: finalTimeInSeconds,
+                    errors: state.game.errors
+                })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                const mappedLobbyState = mapLobbyToClient(data.finalLobbyState);
+                
+                // Reload user state and history completely to make sure it's accurate
+                saveState();
+                await loadState();
+                
+                // Render
+                renderLobbies();
+                
+                // Show leaderboard
+                showLeaderboard(mappedLobbyState, "game");
+                return true;
             }
-        });
-
-        // Determine Winner: lowest time
-        // Sort players by time
-        const sortedPlayers = [...lobby.players].sort((a, b) => a.time - b.time);
-        lobby.winner = sortedPlayers[0].name === "Вие (Участник)" ? "Вие" : sortedPlayers[0].name;
-        lobby.status = "finished";
-
-        // Snapshot finished tournament to history for full transparency
-        if (!state.completedTournaments) {
-            state.completedTournaments = [];
+        } catch (err) {
+            console.warn("finishGame backend call failed, falling back to offline mode:", err);
         }
-        const archiveCopy = JSON.parse(JSON.stringify(lobby));
-        archiveCopy.completedAt = getFormattedDate();
-        archiveCopy.archiveId = Date.now();
-        archiveCopy.isPractice = state.practiceModeActive || (lobby.isFriendDuel && lobby.isPractice);
-        state.completedTournaments.unshift(archiveCopy);
+        return false;
+    })();
 
-        // Update User Profile Stats if user participated (exclude practice mode from real statistics)
-        if (me) {
-            if (!state.user) {
-                state.user = { phone: null, verified: false, gamesPlayed: 0, gamesWon: 0, prizesWonValue: 0, wonPrizesList: [] };
+    apiCallPromise.then(success => {
+        if (success) return;
+
+        // Fallback for offline mode
+        const lobby = state.lobbies.find(l => l.id === state.currentLobbyId);
+        if (lobby) {
+            const me = lobby.players.find(p => p.isMe);
+            if (me) {
+                me.time = parseFloat(finalTimeInSeconds);
+                me.errors = state.game.errors;
+                me.finished = true;
             }
-            if (!state.practiceModeActive) {
-                state.user.gamesPlayed++;
-                if (lobby.winner === "Вие") {
-                    state.user.gamesWon++;
-                    state.user.prizesWonValue += lobby.prizeValue;
-                    
-                    if (lobby.isFriendDuel) {
-                        // Friend duel: add cash prize to balance
-                        state.balance = (state.balance || 0) + lobby.prizeValue;
-                        if (!state.walletHistory) state.walletHistory = [];
-                        state.walletHistory.unshift({
-                            desc: `Спечелен Частен дуел (${lobby.prizeName}) 🏆`,
-                            amount: lobby.prizeValue,
-                            type: "deposit",
-                            date: archiveCopy.completedAt
-                        });
+
+            // Simulate other players finishing times
+            lobby.players.forEach(p => {
+                if (!p.isMe) {
+                    const botBaseTime = (Math.random() * 3.5 + 4.2).toFixed(2);
+                    const botErrors = Math.floor(Math.random() * 2);
+                    const botPenalty = botErrors * 3;
+                    p.time = parseFloat(botBaseTime) + botPenalty;
+                    p.errors = botErrors;
+                    p.finished = true;
+                }
+            });
+
+            // Determine Winner: lowest time
+            const sortedPlayers = [...lobby.players].sort((a, b) => a.time - b.time);
+            lobby.winner = sortedPlayers[0].name === "Вие (Участник)" ? "Вие" : sortedPlayers[0].name;
+            lobby.status = "finished";
+
+            // Snapshot finished tournament to history for full transparency
+            if (!state.completedTournaments) {
+                state.completedTournaments = [];
+            }
+            const archiveCopy = JSON.parse(JSON.stringify(lobby));
+            archiveCopy.completedAt = getFormattedDate();
+            archiveCopy.archiveId = Date.now();
+            archiveCopy.isPractice = state.practiceModeActive || (lobby.isFriendDuel && lobby.isPractice);
+            state.completedTournaments.unshift(archiveCopy);
+
+            // Update User Profile Stats if user participated (exclude practice mode from real statistics)
+            if (me) {
+                if (!state.user) {
+                    state.user = { phone: null, verified: false, gamesPlayed: 0, gamesWon: 0, prizesWonValue: 0, wonPrizesList: [] };
+                }
+                if (!state.practiceModeActive) {
+                    state.user.gamesPlayed++;
+                    if (lobby.winner === "Вие") {
+                        state.user.gamesWon++;
+                        state.user.prizesWonValue += lobby.prizeValue;
                         
-                        if (state.balance >= 50.00) {
-                            unlockAchievement("millionaire");
+                        if (lobby.isFriendDuel) {
+                            // Friend duel: add cash prize to balance
+                            state.balance = (state.balance || 0) + lobby.prizeValue;
+                            if (!state.walletHistory) state.walletHistory = [];
+                            state.walletHistory.unshift({
+                                desc: `Спечелен Частен дуел (${lobby.prizeName}) 🏆`,
+                                amount: lobby.prizeValue,
+                                type: "deposit",
+                                date: archiveCopy.completedAt
+                            });
+                            
+                            if (state.balance >= 50.00) {
+                                unlockAchievement("millionaire");
+                            }
+                        } else {
+                            // Tournament: add physical prize to delivery list
+                            if (!state.user.wonPrizesList) {
+                                state.user.wonPrizesList = [];
+                            }
+                            state.user.wonPrizesList.unshift({
+                                prizeName: lobby.prizeName,
+                                prizeValue: lobby.prizeValue,
+                                date: archiveCopy.completedAt,
+                                archiveId: archiveCopy.archiveId,
+                                deliveryStatus: "pending"
+                            });
                         }
-                    } else {
-                        // Tournament: add physical prize to delivery list
-                        if (!state.user.wonPrizesList) {
-                            state.user.wonPrizesList = [];
-                        }
-                        state.user.wonPrizesList.unshift({
-                            prizeName: lobby.prizeName,
-                            prizeValue: lobby.prizeValue,
-                            date: archiveCopy.completedAt,
-                            archiveId: archiveCopy.archiveId,
-                            deliveryStatus: "pending"
-                        });
+                    }
+                } else {
+                    state.practiceGamesPlayed++;
+                }
+            }
+
+            // Reset the active lobby back to "waiting" so it can be re-played
+            if (lobby.isFriendDuel) {
+                state.lobbies = state.lobbies.filter(l => l.id !== lobby.id);
+            } else {
+                lobby.status = "waiting";
+                lobby.winner = null;
+                lobby.players = [];
+
+                // Prepopulate with a random number of bots (1 to 3) so it looks active
+                const startBotsCount = Math.min(lobby.maxPlayers - 2, Math.floor(Math.random() * 3));
+                const botNames = ["Христо В.", "Иван П.", "Мартин С.", "Теодора А.", "Стефан Р.", "Мария Г."];
+                for (let i = 0; i < startBotsCount; i++) {
+                    lobby.players.push({
+                        name: botNames[i],
+                        isMe: false,
+                        time: null,
+                        errors: 0,
+                        finished: false
+                    });
+                }
+            }
+
+            // XP and Quest Calculations
+            if (me) {
+                let xpGained = 0;
+                if (state.practiceModeActive) {
+                    xpGained = 10;
+                    updateQuestProgress("practice", 1);
+                } else if (lobby.isFriendDuel) {
+                    xpGained = lobby.winner === "Вие" ? 150 : 70;
+                    updateQuestProgress("duel", 1);
+                    if (lobby.winner === "Вие") {
+                        updateQuestProgress("win_duel", 1);
+                    }
+                } else {
+                    xpGained = lobby.winner === "Вие" ? 150 : 50;
+                    if (lobby.winner === "Вие") {
+                        updateQuestProgress("win", 1);
                     }
                 }
-            } else {
-                state.practiceGamesPlayed++;
-            }
-        }
-
-        // Reset the active lobby back to "waiting" so it can be re-played (if it's not a temporary friend duel room)
-        if (lobby.isFriendDuel) {
-            // Remove the friend duel lobby from the active lists to keep it clean
-            state.lobbies = state.lobbies.filter(l => l.id !== lobby.id);
-        } else {
-            lobby.status = "waiting";
-            lobby.winner = null;
-            lobby.players = [];
-
-            // Prepopulate with a random number of bots (1 to 3) so it looks active
-            const startBotsCount = Math.min(lobby.maxPlayers - 2, Math.floor(Math.random() * 3));
-            const botNames = ["Христо В.", "Иван П.", "Мартин С.", "Теодора А.", "Стефан Р.", "Мария Г."];
-            for (let i = 0; i < startBotsCount; i++) {
-                lobby.players.push({
-                    name: botNames[i],
-                    isMe: false,
-                    time: null,
-                    errors: 0,
-                    finished: false
-                });
-            }
-        }
-
-        // XP and Quest Calculations
-        if (me) {
-            let xpGained = 0;
-            if (state.practiceModeActive) {
-                xpGained = 10;
-                updateQuestProgress("practice", 1);
-            } else if (lobby.isFriendDuel) {
-                xpGained = lobby.winner === "Вие" ? 150 : 70;
-                updateQuestProgress("duel", 1);
+                
+                // Apply XP
+                awardXP(xpGained);
+                
+                // Check Achievements
                 if (lobby.winner === "Вие") {
-                    updateQuestProgress("win_duel", 1);
-                }
-            } else {
-                xpGained = lobby.winner === "Вие" ? 150 : 50;
-                if (lobby.winner === "Вие") {
-                    updateQuestProgress("win", 1);
-                }
-            }
-            
-            // Apply XP
-            awardXP(xpGained);
-            
-            // Check Achievements
-            if (lobby.winner === "Вие") {
-                const finalTimeNum = parseFloat(finalTimeInSeconds);
-                if (finalTimeNum < 6.00) {
-                    unlockAchievement("speed");
-                }
-                if (state.game.errors === 0) {
-                    unlockAchievement("flawless");
-                }
-                if (state.user && state.user.gamesWon >= 3) {
-                    unlockAchievement("collector");
+                    const finalTimeNum = parseFloat(finalTimeInSeconds);
+                    if (finalTimeNum < 6.00) {
+                        unlockAchievement("speed");
+                    }
+                    if (state.game.errors === 0) {
+                        unlockAchievement("flawless");
+                    }
+                    if (state.user && state.user.gamesWon >= 3) {
+                        unlockAchievement("collector");
+                    }
                 }
             }
-        }
 
-        saveState();
-        renderLobbies();
-        
-        // Show leaderboard of the snapshot run we just archived
-        showLeaderboard(archiveCopy, "game");
-    }
+            saveState();
+            renderLobbies();
+            
+            // Show leaderboard of the snapshot run we just archived
+            showLeaderboard(archiveCopy, "game");
+        }
+    });
 }
 
 // --- Leaderboard View ---
@@ -1705,7 +1880,7 @@ function showArchivedLeaderboard(archiveId) {
 }
 
 // --- Profile & SMS Verification Logic ---
-function sendSMSVerificationCode() {
+async function sendSMSVerificationCode() {
     const fullnameInput = document.getElementById("profile-fullname-input").value.trim();
     const cityInput = document.getElementById("profile-city-input").value.trim();
     const addressInput = document.getElementById("profile-address-input").value.trim();
@@ -1728,43 +1903,110 @@ function sendSMSVerificationCode() {
         return;
     }
     
-    // Generate a 4-digit code
-    const code = Math.floor(1000 + Math.random() * 9000);
-    state.game.smsSimulatedCode = code.toString();
-    state.game.smsTempPhone = phoneInput;
-    state.game.smsTempFullname = fullnameInput;
-    state.game.smsTempCity = cityInput;
-    state.game.smsTempAddress = addressInput;
-    
-    // Show simulator alert
-    const alertBox = document.getElementById("sms-simulation-alert");
-    const codeDisplay = document.getElementById("sms-simulated-code");
-    if (alertBox && codeDisplay) {
-        alertBox.style.display = "block";
-        codeDisplay.textContent = code;
-    }
-    
-    // Show code input group
-    const codeInputGroup = document.getElementById("code-input-group");
-    if (codeInputGroup) {
-        codeInputGroup.style.display = "block";
+    try {
+        const response = await fetch('/api/auth/register-sms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phone: phoneInput,
+                fullname: fullnameInput,
+                city: cityInput,
+                address: addressInput
+            })
+        });
+        
+        if (response.ok) {
+            const res = await response.json();
+            
+            state.game.smsSimulatedCode = res.code;
+            state.game.smsTempPhone = phoneInput;
+            state.game.smsTempFullname = fullnameInput;
+            state.game.smsTempCity = cityInput;
+            state.game.smsTempAddress = addressInput;
+            
+            // Show simulator alert
+            const alertBox = document.getElementById("sms-simulation-alert");
+            const codeDisplay = document.getElementById("sms-simulated-code");
+            if (alertBox && codeDisplay) {
+                alertBox.style.display = "block";
+                codeDisplay.textContent = res.code;
+            }
+            
+            // Show code input group
+            const codeInputGroup = document.getElementById("code-input-group");
+            if (codeInputGroup) {
+                codeInputGroup.style.display = "block";
+            }
+        } else {
+            const err = await response.json();
+            alert("Грешка при изпращане на SMS: " + err.error);
+        }
+    } catch (err) {
+        console.error("SMS register error:", err);
+        // Fallback for offline mode
+        const code = Math.floor(1000 + Math.random() * 9000);
+        state.game.smsSimulatedCode = code.toString();
+        state.game.smsTempPhone = phoneInput;
+        state.game.smsTempFullname = fullnameInput;
+        state.game.smsTempCity = cityInput;
+        state.game.smsTempAddress = addressInput;
+        
+        const alertBox = document.getElementById("sms-simulation-alert");
+        const codeDisplay = document.getElementById("sms-simulated-code");
+        if (alertBox && codeDisplay) {
+            alertBox.style.display = "block";
+            codeDisplay.textContent = code;
+        }
+        
+        const codeInputGroup = document.getElementById("code-input-group");
+        if (codeInputGroup) {
+            codeInputGroup.style.display = "block";
+        }
     }
 }
 
-function verifySMSCode() {
+async function verifySMSCode() {
     const codeInput = document.getElementById("profile-code-input").value.trim();
-    if (codeInput === state.game.smsSimulatedCode) {
-        state.user.verified = true;
-        state.user.phone = state.game.smsTempPhone;
-        state.user.fullname = state.game.smsTempFullname;
-        state.user.city = state.game.smsTempCity;
-        state.user.address = state.game.smsTempAddress;
+    const phone = state.game.smsTempPhone;
+    
+    try {
+        const response = await fetch('/api/auth/verify-sms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phone, code: codeInput })
+        });
         
-        saveState();
-        renderProfile();
-        alert("Успешна верификация и регистрация! Профилът Ви беше отключен.");
-    } else {
-        alert("Невалиден верификационен код. Моля, опитайте отново.");
+        if (response.ok) {
+            const res = await response.json();
+            
+            state.user.verified = true;
+            state.user.phone = res.user.phone;
+            state.user.fullname = res.user.fullname;
+            state.user.city = res.user.city;
+            state.user.address = res.user.address;
+            
+            saveState();
+            await loadState(); // Reload state from backend to sync
+            renderProfile();
+            alert("Успешна верификация и регистрация! Профилът Ви беше отключен.");
+        } else {
+            alert("Невалиден верификационен код. Моля, опитайте отново.");
+        }
+    } catch (err) {
+        console.error("SMS verify error:", err);
+        // Fallback
+        if (codeInput === state.game.smsSimulatedCode) {
+            state.user.verified = true;
+            state.user.phone = state.game.smsTempPhone;
+            state.user.fullname = state.game.smsTempFullname;
+            state.user.city = state.game.smsTempCity;
+            state.user.address = state.game.smsTempAddress;
+            saveState();
+            renderProfile();
+            alert("Успешна верификация и регистрация! (Офлайн режим).");
+        } else {
+            alert("Невалиден верификационен код. Моля, опитайте отново.");
+        }
     }
 }
 
@@ -1921,7 +2163,7 @@ function renderProfile() {
 }
 
 // --- ADMIN CREATE LOBBY ---
-function adminCreateLobby(event) {
+async function adminCreateLobby(event) {
     event.preventDefault();
 
     const name = document.getElementById("admin-prize-name").value;
@@ -1938,6 +2180,38 @@ function adminCreateLobby(event) {
     const imgUrl = document.getElementById("admin-prize-image-url").value.trim();
     const resolvedImage = imgUrl || resolveProductImage(name, prodUrl);
 
+    try {
+        const response = await apiFetch('/api/admin/create-lobby', {
+            method: 'POST',
+            body: JSON.stringify({
+                prizeName: name,
+                prizeValue: val,
+                ticketPrice: ticket,
+                maxPlayers: max,
+                productType: prod,
+                gameType: gameType,
+                image: resolvedImage,
+                productUrl: prodUrl || null
+            })
+        });
+        
+        if (response.ok) {
+            document.getElementById("admin-create-lobby-form").reset();
+            document.getElementById("admin-image-preview-box").style.display = "none";
+            document.getElementById("admin-image-preview").src = "";
+            
+            saveState();
+            await loadState(); // Sync lists from DB
+            
+            alert(`Турнирът за "${name}" беше създаден успешно!`);
+            switchRole("user");
+            return;
+        }
+    } catch (err) {
+        console.error("adminCreateLobby error:", err);
+    }
+    
+    // Fallback for offline mode
     const newLobby = {
         id: state.lobbies.length + 1,
         prizeName: name,
@@ -1954,7 +2228,6 @@ function adminCreateLobby(event) {
         winner: null
     };
 
-    // Prepopulate with a random number of bots so it looks active
     const startBotsCount = Math.min(max - 2, Math.floor(Math.random() * 3));
     const botNames = ["Христо В.", "Иван П.", "Мартин С.", "Теодора А.", "Стефан Р.", "Мария Г."];
     for (let i = 0; i < startBotsCount; i++) {
@@ -1970,19 +2243,14 @@ function adminCreateLobby(event) {
     state.lobbies.push(newLobby);
     saveState();
     
-    // Reset form
     document.getElementById("admin-create-lobby-form").reset();
-    
-    // Reset preview box
     document.getElementById("admin-image-preview-box").style.display = "none";
     document.getElementById("admin-image-preview").src = "";
     
-    // Render and switch screen
     renderLobbies();
     updateUI();
     
-    // Alert success and redirect
-    alert(`Турнирът за "${name}" беше създаден успешно!`);
+    alert(`Турнирът за "${name}" беше създаден успешно! (Офлайн)`);
     switchRole("user");
 }
 
@@ -2007,14 +2275,32 @@ function switchRole(role) {
     updateUI();
 }
 
-function resetApp() {
+async function resetApp() {
     if (confirm("Сигурни ли сте, че искате да нулирате състоянието и лобитата?")) {
+        try {
+            const response = await apiFetch('/api/user/reset-state', {
+                method: 'POST'
+            });
+            if (response.ok) {
+                resetStateToDefault();
+                await loadState();
+                renderLobbies();
+                showScreen("user-lobbies-screen");
+                navSwitch("user-lobbies");
+                alert("Системата беше нулирана.");
+                return;
+            }
+        } catch (err) {
+            console.error("resetApp error:", err);
+        }
+        
+        // Fallback for offline mode
         resetStateToDefault();
         renderLobbies();
         updateUI();
         showScreen("user-lobbies-screen");
         navSwitch("user-lobbies");
-        alert("Системата беше нулирана.");
+        alert("Системата беше нулирана. (Офлайн)");
     }
 }
 
@@ -2085,6 +2371,14 @@ function updateUI() {
         let pendingDeliveries = 0;
         let shippedDeliveries = 0;
 
+        let feesCollected = 0;
+        let tournamentFees = 0;
+        let duelFees = 0;
+        let realCashPayouts = 0;
+        let realPhysicalPayouts = 0;
+        let botSavings = 0;
+        let netAppEarnings = 0;
+
         // Count active lobbies
         state.lobbies.forEach(lobby => {
             if (lobby.status !== "finished") {
@@ -2110,8 +2404,14 @@ function updateUI() {
                 totalPayouts += paidOut;
                 netProfit += profit;
 
+                feesCollected += collected;
+                duelFees += collected;
+
                 if (lobby.winner === "Вие") {
                     userPayouts += paidOut;
+                    realCashPayouts += paidOut;
+                } else {
+                    botSavings += paidOut;
                 }
             } else {
                 // Tournament:
@@ -2126,8 +2426,14 @@ function updateUI() {
                 totalPayouts += paidOut;
                 netProfit += profit;
 
+                feesCollected += collected;
+                tournamentFees += collected;
+
                 if (lobby.winner === "Вие") {
                     userPayouts += paidOut;
+                    realPhysicalPayouts += paidOut;
+                } else {
+                    botSavings += paidOut;
                 }
 
                 if (lobby.productUrl) {
@@ -2140,10 +2446,29 @@ function updateUI() {
             }
         });
 
+        netAppEarnings = feesCollected - realCashPayouts - realPhysicalPayouts;
+
         if (grossRevEl) grossRevEl.textContent = `€${grossRevenue.toFixed(2)}`;
         if (netProfitEl) netProfitEl.textContent = `€${netProfit.toFixed(2)}`;
         if (totalPayoutsEl) totalPayoutsEl.textContent = `€${totalPayouts.toFixed(2)}`;
         if (userPayoutsEl) userPayoutsEl.textContent = `€${userPayouts.toFixed(2)}`;
+        
+        // Render detailed elements
+        const feesCollEl = document.getElementById("admin-stat-fees-collected");
+        const tourFeesEl = document.getElementById("admin-stat-tournament-fees");
+        const duelFeesEl = document.getElementById("admin-stat-duel-fees");
+        const realCashPayEl = document.getElementById("admin-stat-real-cash-payouts");
+        const realPhysPayEl = document.getElementById("admin-stat-real-physical-payouts");
+        const botSavEl = document.getElementById("admin-stat-bot-savings");
+        const netAppEarnEl = document.getElementById("admin-stat-net-app-earnings");
+
+        if (feesCollEl) feesCollEl.textContent = `€${feesCollected.toFixed(2)}`;
+        if (tourFeesEl) tourFeesEl.textContent = `€${tournamentFees.toFixed(2)}`;
+        if (duelFeesEl) duelFeesEl.textContent = `€${duelFees.toFixed(2)}`;
+        if (realCashPayEl) realCashPayEl.textContent = `€${realCashPayouts.toFixed(2)}`;
+        if (realPhysPayEl) realPhysPayEl.textContent = `€${realPhysicalPayouts.toFixed(2)}`;
+        if (botSavEl) botSavEl.textContent = `€${botSavings.toFixed(2)}`;
+        if (netAppEarnEl) netAppEarnEl.textContent = `€${netAppEarnings.toFixed(2)}`;
         
         if (activeRoomsEl) activeRoomsEl.textContent = activeRooms;
         if (pendingDelEl) pendingDelEl.textContent = pendingDeliveries;
@@ -2221,7 +2546,28 @@ function updateUI() {
 }
 
 // --- Admin Delivery Actions ---
-function adminMarkShipped(archiveId) {
+async function adminMarkShipped(archiveId) {
+    try {
+        const response = await apiFetch('/api/admin/mark-shipped', {
+            method: 'POST',
+            body: JSON.stringify({ archiveId })
+        });
+        
+        if (response.ok) {
+            const lobby = state.completedTournaments.find(l => l.archiveId === archiveId);
+            const prizeNameText = lobby ? lobby.prizeName : `Турнир #${archiveId}`;
+            
+            saveState();
+            await loadState(); // Sync lists from DB
+            
+            alert(`Турнирът за "${prizeNameText}" е маркиран като изпратен до победителя!`);
+            return;
+        }
+    } catch (err) {
+        console.error("adminMarkShipped error:", err);
+    }
+    
+    // Fallback for offline mode
     const lobby = state.completedTournaments.find(l => l.archiveId === archiveId);
     if (lobby) {
         lobby.deliveryStatus = "shipped";
@@ -2233,7 +2579,7 @@ function adminMarkShipped(archiveId) {
         }
         saveState();
         updateUI();
-        alert(`Турнирът за "${lobby.prizeName}" е маркиран като изпратен до победителя!`);
+        alert(`Турнирът за "${lobby.prizeName}" е маркиран като изпратен до победителя! (Офлайн)`);
     }
 }
 
@@ -2466,52 +2812,97 @@ function spinWheel() {
         ];
         
         const reward = rewards[targetSegment];
+        const spinDate = new Date().toDateString();
         
         // Play success chime
         playWinSound();
         
-        // Process rewards
-        if (reward.type === "cash") {
-            state.balance += reward.val;
-            state.walletHistory.unshift({
-                desc: `Ежедневен бонус колело: ${reward.name}`,
-                amount: reward.val,
-                type: "deposit",
-                date: getFormattedDate()
-            });
-            state.lastSpinDate = new Date().toDateString();
-        } else if (reward.type === "wallpaper") {
-            // Add wallpaper download link
-            state.walletHistory.unshift({
-                desc: `Ежедневен бонус колело: Premium Тапет (HD) [Изтегли]`,
-                amount: 0,
-                type: "deposit",
-                date: getFormattedDate()
-            });
-            state.lastSpinDate = new Date().toDateString();
-        } else if (reward.type === "spin") {
-            // Do not save lastSpinDate so they can spin again!
-            if (btn) {
-                btn.disabled = false;
-                btn.style.opacity = "1";
-                btn.style.cursor = "pointer";
+        // Process rewards using API if online
+        const syncPromise = (async () => {
+            try {
+                const response = await apiFetch('/api/user/lucky-spin', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        rewardType: reward.type,
+                        rewardVal: reward.val,
+                        rewardName: reward.name,
+                        spinDate: spinDate
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.user) {
+                        state.balance = parseFloat(data.user.balance);
+                        state.lastSpinDate = data.user.last_spin_date;
+                        state.dailyQuests = typeof data.user.daily_quests === 'string' ? JSON.parse(data.user.daily_quests) : data.user.daily_quests || [];
+                        state.unlockedAchievements = data.user.unlocked_achievements || [];
+                    }
+                    saveState();
+                    await loadState(); // Sync history
+                    updateUI();
+                    renderProfile();
+                    return true;
+                }
+            } catch (err) {
+                console.warn("lucky-spin sync failed, falling back to offline mode:", err);
             }
-        }
+            return false;
+        })();
         
-        saveState();
-        updateUI();
-        updateQuestProgress("spin", 1);
-        
-        if (alertBox) {
-            alertBox.style.display = "block";
-            if (reward.type === "spin") {
-                alertBox.innerHTML = `<strong>🎉 Късмет!</strong><br>Спечелихте: <strong>${reward.name}</strong><br>Въртете колелото отново веднага!`;
-            } else if (reward.type === "wallpaper") {
-                alertBox.innerHTML = `<strong>🎉 Поздравления!</strong><br>Спечелихте: <strong>${reward.name}</strong><br>Можете да свалите Вашия арт тапет от историята в портфейла си.`;
+        syncPromise.then(synced => {
+            if (synced) {
+                // If it was a spin-again reward, unlock the button immediately
+                if (reward.type === "spin") {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.style.opacity = "1";
+                        btn.style.cursor = "pointer";
+                    }
+                }
             } else {
-                alertBox.innerHTML = `<strong>🎉 Страхотно!</strong><br>Спечелихте: <strong>${reward.name}</strong><br>Бонусът е добавен към баланса Ви!`;
+                // Fallback for offline mode
+                if (reward.type === "cash") {
+                    state.balance += reward.val;
+                    state.walletHistory.unshift({
+                        desc: `Ежедневен бонус колело: ${reward.name}`,
+                        amount: reward.val,
+                        type: "deposit",
+                        date: getFormattedDate()
+                    });
+                    state.lastSpinDate = spinDate;
+                } else if (reward.type === "wallpaper") {
+                    state.walletHistory.unshift({
+                        desc: `Ежедневен бонус колело: Premium Тапет (HD) [Изтегли]`,
+                        amount: 0,
+                        type: "deposit",
+                        date: getFormattedDate()
+                    });
+                    state.lastSpinDate = spinDate;
+                } else if (reward.type === "spin") {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.style.opacity = "1";
+                        btn.style.cursor = "pointer";
+                    }
+                }
+                
+                saveState();
+                updateUI();
+                updateQuestProgress("spin", 1);
             }
-        }
+            
+            if (alertBox) {
+                alertBox.style.display = "block";
+                if (reward.type === "spin") {
+                    alertBox.innerHTML = `<strong>🎉 Късмет!</strong><br>Спечелихте: <strong>${reward.name}</strong><br>Въртете колелото отново веднага!`;
+                } else if (reward.type === "wallpaper") {
+                    alertBox.innerHTML = `<strong>🎉 Поздравления!</strong><br>Спечелихте: <strong>${reward.name}</strong><br>Можете да свалите Вашия арт тапет от историята в портфейла си.`;
+                } else {
+                    alertBox.innerHTML = `<strong>🎉 Страхотно!</strong><br>Спечелихте: <strong>${reward.name}</strong><br>Бонусът е добавен към баланса Ви!`;
+                }
+            }
+        });
     }, 5000);
 }
 
@@ -2530,17 +2921,15 @@ function openFriendDuelSettings() {
     showScreen("friend-duel-modal");
 }
 
-function createFriendDuel(event) {
+async function createFriendDuel(event) {
     event.preventDefault();
     const gameType = document.getElementById("duel-game-type").value;
     const entryFee = parseFloat(document.getElementById("duel-entry-fee").value);
     
     if (isNaN(entryFee) || entryFee < 0.50) {
-        alert("Моля, въведете валиден залог от минимум €0.50!");
+        alert("Моля, въведете залог от минимум €0.50!");
         return;
     }
-    
-    const prizeValue = entryFee * 1.8;
     
     if (!state.practiceModeActive) {
         if (!state.user || !state.user.verified) {
@@ -2552,59 +2941,92 @@ function createFriendDuel(event) {
             alert("Нямате достатъчно баланс за този залог!");
             return;
         }
+    }
+    
+    try {
+        const response = await apiFetch('/api/lobbies/create-duel', {
+            method: 'POST',
+            body: JSON.stringify({ gameType, entryFee, isPractice: state.practiceModeActive })
+        });
         
-        // Deduct fee
-        state.balance -= entryFee;
-        state.walletHistory.unshift({
-            desc: `Създаване на стая за Частен дуел (${getGameTypeNameBg(gameType)})`,
-            amount: entryFee,
-            type: "withdraw",
-            date: getFormattedDate()
-        });
-    } else {
-        state.walletHistory.unshift({
-            desc: `Създаване на стая за Частен дуел (Тренировка)`,
-            amount: 0,
-            type: "withdraw",
-            date: getFormattedDate()
-        });
+        if (response.ok) {
+            const data = await response.json();
+            const mappedLobby = mapLobbyToClient(data.lobby);
+            
+            state.currentLobbyId = mappedLobby.id;
+            state.lobbies.push(mappedLobby);
+            
+            if (data.user) {
+                state.balance = parseFloat(data.user.balance);
+            }
+            
+            saveState();
+            await loadState(); // Sync list and history fully
+            
+            // Generate simulated link
+            const inviteLinkInput = document.getElementById("duel-invite-link");
+            if (inviteLinkInput) {
+                inviteLinkInput.value = `https://winblitz.bg/join-duel?room=WB-${mappedLobby.id}-${Math.floor(1000 + Math.random() * 9000)}`;
+            }
+            
+            const inviteBox = document.getElementById("duel-invite-box");
+            if (inviteBox) inviteBox.style.display = "block";
+        } else {
+            const err = await response.json();
+            alert("Грешка при създаване на дуел: " + err.error);
+        }
+    } catch (err) {
+        console.error("createFriendDuel error:", err);
+        // Fallback for offline mode
+        const prizeValue = entryFee * 1.8;
+        if (!state.practiceModeActive) {
+            state.balance -= entryFee;
+            state.walletHistory.unshift({
+                desc: `Създаване на стая за Частен дуел (${getGameTypeNameBg(gameType)})`,
+                amount: entryFee,
+                type: "withdraw",
+                date: getFormattedDate()
+            });
+        } else {
+            state.walletHistory.unshift({
+                desc: `Създаване на стая за Частен дуел (Тренировка)`,
+                amount: 0,
+                type: "withdraw",
+                date: getFormattedDate()
+            });
+        }
+        const newDuelLobby = {
+            id: state.lobbies.length + 1,
+            prizeName: `Частен дуел (${getGameTypeNameBg(gameType)})`,
+            prizeValue: prizeValue,
+            ticketPrice: entryFee,
+            maxPlayers: 2,
+            productType: "duel",
+            gameType: gameType,
+            image: "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop",
+            productUrl: null,
+            deliveryStatus: "pending",
+            status: "waiting",
+            players: [
+                { name: "Вие (Участник)", isMe: true, time: null, errors: 0, finished: false }
+            ],
+            winner: null,
+            isFriendDuel: true,
+            isPractice: state.practiceModeActive
+        };
+        state.currentLobbyId = newDuelLobby.id;
+        state.lobbies.push(newDuelLobby);
+        saveState();
+        updateUI();
+        renderLobbies();
+        
+        const inviteLinkInput = document.getElementById("duel-invite-link");
+        if (inviteLinkInput) {
+            inviteLinkInput.value = `https://winblitz.bg/join-duel?room=WB-${newDuelLobby.id}-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+        const inviteBox = document.getElementById("duel-invite-box");
+        if (inviteBox) inviteBox.style.display = "block";
     }
-    
-    const newDuelLobby = {
-        id: state.lobbies.length + 1,
-        prizeName: `Частен дуел (${getGameTypeNameBg(gameType)})`,
-        prizeValue: prizeValue,
-        ticketPrice: entryFee,
-        maxPlayers: 2,
-        productType: "duel",
-        gameType: gameType,
-        image: "https://images.unsplash.com/photo-1511512578047-dfb367046420?w=600&auto=format&fit=crop",
-        productUrl: null,
-        deliveryStatus: "pending",
-        status: "waiting",
-        players: [
-            { name: "Вие (Участник)", isMe: true, time: null, errors: 0, finished: false }
-        ],
-        winner: null,
-        isFriendDuel: true,
-        isPractice: state.practiceModeActive
-    };
-    
-    state.currentLobbyId = newDuelLobby.id;
-    state.lobbies.push(newDuelLobby);
-    
-    saveState();
-    updateUI();
-    renderLobbies();
-    
-    // Generate simulated link
-    const inviteLinkInput = document.getElementById("duel-invite-link");
-    if (inviteLinkInput) {
-        inviteLinkInput.value = `https://winblitz.bg/join-duel?room=WB-${newDuelLobby.id}-${Math.floor(1000 + Math.random() * 9000)}`;
-    }
-    
-    const inviteBox = document.getElementById("duel-invite-box");
-    if (inviteBox) inviteBox.style.display = "block";
 }
 
 function copyDuelInviteLink() {
@@ -2621,7 +3043,7 @@ function copyDuelInviteLink() {
     }
 }
 
-function simulateOpponentJoin() {
+async function simulateOpponentJoin() {
     const lobby = state.lobbies.find(l => l.id === state.currentLobbyId);
     if (!lobby) return;
     
@@ -2633,23 +3055,46 @@ function simulateOpponentJoin() {
     const botNames = ["Алекс С.", "Калоян И.", "Николай Т.", "Виктор Г."];
     const botName = botNames[Math.floor(Math.random() * botNames.length)];
     
-    lobby.players.push({
-        name: botName,
-        isMe: false,
-        time: null,
-        errors: 0,
-        finished: false
-    });
-    
-    saveState();
-    updateUI();
-    renderLobbies();
-    
-    // Close popup screen
-    document.getElementById("friend-duel-modal").classList.remove("active");
-    
-    // Go to waiting room
-    openWaitingLobby(lobby);
+    try {
+        const response = await apiFetch('/api/lobbies/bot-join', {
+            method: 'POST',
+            body: JSON.stringify({ lobbyId: lobby.id, botName })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            const updatedLobby = mapLobbyToClient(data.lobby);
+            
+            const index = state.lobbies.findIndex(l => l.id === lobby.id);
+            if (index !== -1) {
+                state.lobbies[index] = updatedLobby;
+            }
+            
+            saveState();
+            renderLobbies();
+            
+            // Close popup screen
+            document.getElementById("friend-duel-modal").classList.remove("active");
+            
+            // Go to waiting room
+            openWaitingLobby(updatedLobby);
+        }
+    } catch (err) {
+        console.error("simulateOpponentJoin error:", err);
+        // Fallback for offline mode
+        lobby.players.push({
+            name: botName,
+            isMe: false,
+            time: null,
+            errors: 0,
+            finished: false
+        });
+        saveState();
+        updateUI();
+        renderLobbies();
+        document.getElementById("friend-duel-modal").classList.remove("active");
+        openWaitingLobby(lobby);
+    }
 }
 
 // --- 4. Live Opponent Simulation during Gameplay ---
@@ -3243,39 +3688,90 @@ function updateQuestProgress(action, value) {
     }
 }
 
-function claimQuestReward(questId) {
+async function claimQuestReward(questId) {
     if (!state.dailyQuests) return;
     const quest = state.dailyQuests.find(q => q.id === questId);
-    if (quest && quest.current >= quest.target && !quest.claimed) {
-        quest.claimed = true;
-        state.balance = (state.balance || 0) + quest.reward;
-        
-        if (!state.walletHistory) state.walletHistory = [];
-        state.walletHistory.unshift({
-            desc: `Награда от мисия: ${quest.desc}`,
-            amount: quest.reward,
-            type: "deposit",
-            date: getFormattedDate()
+    if (!quest) return;
+
+    try {
+        const response = await apiFetch('/api/user/claim-quest', {
+            method: 'POST',
+            body: JSON.stringify({ questId })
         });
         
-        if (state.balance >= 50.00) {
-            unlockAchievement("millionaire");
+        if (response.ok) {
+            const data = await response.json();
+            
+            // Sync user state returned from backend
+            if (data.user) {
+                state.balance = parseFloat(data.user.balance);
+                state.unlockedAchievements = data.user.unlocked_achievements || [];
+                state.dailyQuests = typeof data.user.daily_quests === 'string' ? JSON.parse(data.user.daily_quests) : data.user.daily_quests || [];
+            }
+            
+            saveState();
+            await loadState(); // Sync history
+            renderProfile();
+            updateUI();
+            
+            alert(`🎉 Взехте награда от €${quest.reward.toFixed(2)}!`);
+        } else {
+            const err = await response.json();
+            alert("Грешка при вземане на награда: " + err.error);
         }
-        
-        saveState();
-        updateUI();
-        renderProfile();
-        
-        alert(`🎉 Взехте награда от €${quest.reward.toFixed(2)}!`);
+    } catch (err) {
+        console.error("claimQuestReward error:", err);
+        // Fallback for offline mode
+        if (quest.current >= quest.target && !quest.claimed) {
+            quest.claimed = true;
+            state.balance = (state.balance || 0) + quest.reward;
+            
+            if (!state.walletHistory) state.walletHistory = [];
+            state.walletHistory.unshift({
+                desc: `Награда от мисия: ${quest.desc}`,
+                amount: quest.reward,
+                type: "deposit",
+                date: getFormattedDate()
+            });
+            
+            if (state.balance >= 50.00) {
+                unlockAchievement("millionaire");
+            }
+            
+            saveState();
+            updateUI();
+            renderProfile();
+            alert(`🎉 Взехте награда от €${quest.reward.toFixed(2)}! (Офлайн)`);
+        }
     }
 }
 
-function simulateNewDay() {
-    state.dailyQuests = generateDailyQuests();
-    state.lastSpinDate = null;
-    saveState();
-    renderProfile();
-    alert("⏳ Дневните мисии и колелото на късмета бяха занулени за новия ден!");
+async function simulateNewDay() {
+    try {
+        const response = await apiFetch('/api/user/simulate-new-day', {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            if (data.user) {
+                state.dailyQuests = typeof data.user.daily_quests === 'string' ? JSON.parse(data.user.daily_quests) : data.user.daily_quests || [];
+                state.lastSpinDate = data.user.last_spin_date || null;
+            }
+            
+            saveState();
+            renderProfile();
+            alert("⏳ Дневните мисии и колелото на късмета бяха занулени за новия ден!");
+        }
+    } catch (err) {
+        console.error("simulateNewDay error:", err);
+        // Fallback for offline mode
+        state.dailyQuests = generateDailyQuests();
+        state.lastSpinDate = null;
+        saveState();
+        renderProfile();
+        alert("⏳ Дневните мисии и колелото на късмета бяха занулени за новия ден! (Офлайн)");
+    }
 }
 
 function unlockAchievement(id) {
@@ -3466,19 +3962,52 @@ function switchLeagueClanTab(tab) {
     renderLeagueClan();
 }
 
-function joinClan(clanId) {
-    state.clanId = clanId;
-    saveState();
-    renderLeagueClan();
-    const clanName = CLANS_DATA[clanId].name;
-    alert(`🛡️ Вие се присъединихте към клана "${clanName}"!`);
-}
-
-function leaveClan() {
-    if (confirm("Сигурни ли сте, че искате да напуснете клана?")) {
-        state.clanId = null;
+async function joinClan(clanId) {
+    try {
+        const response = await apiFetch('/api/user/join-clan', {
+            method: 'POST',
+            body: JSON.stringify({ clanId })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.user) {
+                state.clanId = data.user.clan_id;
+            }
+            saveState();
+            renderLeagueClan();
+            const clanName = CLANS_DATA[clanId].name;
+            alert(`🛡️ Вие се присъединихте към клана "${clanName}"!`);
+        }
+    } catch (err) {
+        console.error("joinClan error:", err);
+        state.clanId = clanId;
         saveState();
         renderLeagueClan();
+        const clanName = CLANS_DATA[clanId].name;
+        alert(`🛡️ Вие се присъединихте към клана "${clanName}"! (Офлайн)`);
+    }
+}
+
+async function leaveClan() {
+    if (confirm("Сигурни ли сте, че искате да напуснете клана?")) {
+        try {
+            const response = await apiFetch('/api/user/leave-clan', {
+                method: 'POST'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                if (data.user) {
+                    state.clanId = data.user.clan_id;
+                }
+                saveState();
+                renderLeagueClan();
+            }
+        } catch (err) {
+            console.error("leaveClan error:", err);
+            state.clanId = null;
+            saveState();
+            renderLeagueClan();
+        }
     }
 }
 
@@ -3516,11 +4045,38 @@ function openLootBox() {
     if (chest) {
         chest.classList.add("shake");
         
-        setTimeout(() => {
+        setTimeout(async () => {
             chest.classList.remove("shake");
             chest.classList.add("open");
             
-            setTimeout(() => {
+            try {
+                const response = await apiFetch('/api/user/open-lootbox', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    if (data.user) {
+                        state.balance = parseFloat(data.user.balance);
+                        state.unlockedAvatars = data.user.unlocked_avatars || ['👤'];
+                        state.lootBoxesOwned = data.user.loot_boxes_owned || 0;
+                        state.unlockedAchievements = data.user.unlocked_achievements || [];
+                    }
+                    
+                    saveState();
+                    await loadState(); // Sync history
+                    updateUI();
+                    renderProfile();
+                    
+                    if (result) {
+                        result.style.display = "block";
+                        result.innerHTML = data.rewardText;
+                    }
+                }
+            } catch (err) {
+                console.error("openLootBox error:", err);
+                // Fallback for offline mode
                 const rand = Math.random();
                 let rewardText = "";
                 
@@ -3584,7 +4140,7 @@ function openLootBox() {
                     result.style.display = "block";
                     result.innerHTML = rewardText;
                 }
-                
+            } finally {
                 if (btnOpen) {
                     btnOpen.textContent = "ГОТОВО";
                     btnOpen.disabled = false;
@@ -3593,7 +4149,7 @@ function openLootBox() {
                         btnOpen.onclick = openLootBox;
                     };
                 }
-            }, 500);
+            }
         }, 1200);
     }
 }
@@ -3690,53 +4246,116 @@ function renderShopThemes() {
     });
 }
 
-function selectAvatar(avatar) {
-    state.activeAvatar = avatar;
-    saveState();
-    renderProfile();
-    renderShopAvatars();
-    alert("Аватарът беше променен успешно!");
+async function selectAvatar(avatar) {
+    try {
+        const response = await apiFetch('/api/user/select-avatar', {
+            method: 'POST',
+            body: JSON.stringify({ avatar })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.user) {
+                state.activeAvatar = data.user.active_avatar;
+            }
+            saveState();
+            renderProfile();
+            renderShopAvatars();
+            alert("Аватарът беше променен успешно!");
+        }
+    } catch (err) {
+        console.error("selectAvatar error:", err);
+        state.activeAvatar = avatar;
+        saveState();
+        renderProfile();
+        renderShopAvatars();
+        alert("Аватарът беше променен успешно! (Офлайн)");
+    }
 }
 
-function selectTheme(themeId) {
-    state.activeTheme = themeId;
-    saveState();
-    applyActiveTheme();
-    renderShopThemes();
-    alert("Темата на апликацията беше променена успешно!");
+async function selectTheme(themeId) {
+    try {
+        const response = await apiFetch('/api/user/select-theme', {
+            method: 'POST',
+            body: JSON.stringify({ themeId })
+        });
+        if (response.ok) {
+            const data = await response.json();
+            if (data.user) {
+                state.activeTheme = data.user.active_theme;
+            }
+            saveState();
+            applyActiveTheme();
+            renderShopThemes();
+            alert("Темата на апликацията беше променена успешно!");
+        }
+    } catch (err) {
+        console.error("selectTheme error:", err);
+        state.activeTheme = themeId;
+        saveState();
+        applyActiveTheme();
+        renderShopThemes();
+        alert("Темата на апликацията беше променена успешно! (Офлайн)");
+    }
 }
 
-function buyAvatar(avatar, price) {
+async function buyAvatar(avatar, price) {
     if ((state.balance || 0) < price) {
         alert("Нямате достатъчно баланс за този аватар! Участвайте в игри или завъртете колелото, за да спечелите.");
         return;
     }
     
     if (confirm(`Искате ли да купите аватара "${avatar}" за €${price.toFixed(2)}?`)) {
-        state.balance -= price;
-        state.unlockedAvatars.push(avatar);
-        
-        if (!state.walletHistory) state.walletHistory = [];
-        state.walletHistory.unshift({
-            desc: `Покупка на аватар: ${avatar}`,
-            amount: -price,
-            type: "withdrawal",
-            date: getFormattedDate()
-        });
-        
-        if (state.unlockedAvatars.length >= 3) {
-            unlockAchievement("collector");
+        try {
+            const response = await apiFetch('/api/user/buy-avatar', {
+                method: 'POST',
+                body: JSON.stringify({ avatar, price })
+            });
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.user) {
+                    state.balance = parseFloat(data.user.balance);
+                    state.unlockedAvatars = data.user.unlocked_avatars || ['👤'];
+                    state.unlockedAchievements = data.user.unlocked_achievements || [];
+                }
+                
+                saveState();
+                await loadState(); // Sync history
+                renderProfile();
+                renderShopAvatars();
+                alert(`Успешна покупка! Вече можете да изберете аватара "${avatar}".`);
+            } else {
+                const err = await response.json();
+                alert("Грешка при покупка: " + err.error);
+            }
+        } catch (err) {
+            console.error("buyAvatar error:", err);
+            // Fallback for offline mode
+            state.balance -= price;
+            state.unlockedAvatars.push(avatar);
+            
+            if (!state.walletHistory) state.walletHistory = [];
+            state.walletHistory.unshift({
+                desc: `Покупка на аватар: ${avatar}`,
+                amount: -price,
+                type: "withdrawal",
+                date: getFormattedDate()
+            });
+            
+            if (state.unlockedAvatars.length >= 3) {
+                unlockAchievement("collector");
+            }
+            
+            saveState();
+            updateUI();
+            renderProfile();
+            renderShopAvatars();
+            alert(`Успешна покупка! Вече можете да изберете аватара "${avatar}". (Офлайн)`);
         }
-        
-        saveState();
-        updateUI();
-        renderProfile();
-        renderShopAvatars();
-        alert(`Успешна покупка! Вече можете да изберете аватара "${avatar}".`);
     }
 }
 
-function buyTheme(themeId, price) {
+async function buyTheme(themeId, price) {
     if ((state.balance || 0) < price) {
         alert("Нямате достатъчно баланс за тази тема! Участвайте в игри или завъртете колелото, за да спечелите.");
         return;
@@ -3745,25 +4364,52 @@ function buyTheme(themeId, price) {
     const themeName = SHOP_THEMES.find(t => t.id === themeId).name;
     
     if (confirm(`Искате ли да купите темата "${themeName}" за €${price.toFixed(2)}?`)) {
-        state.balance -= price;
-        if (!state.unlockedThemes) {
-            state.unlockedThemes = ["default"];
+        try {
+            const response = await apiFetch('/api/user/buy-theme', {
+                method: 'POST',
+                body: JSON.stringify({ themeId, price, themeName })
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                
+                if (data.user) {
+                    state.balance = parseFloat(data.user.balance);
+                    state.unlockedThemes = data.user.unlocked_themes || ['default'];
+                }
+                
+                saveState();
+                await loadState(); // Sync history
+                renderProfile();
+                renderShopThemes();
+                alert(`Успешна покупка! Вече можете да приложите темата "${themeName}".`);
+            } else {
+                const err = await response.json();
+                alert("Грешка при покупка: " + err.error);
+            }
+        } catch (err) {
+            console.error("buyTheme error:", err);
+            // Fallback for offline mode
+            state.balance -= price;
+            if (!state.unlockedThemes) {
+                state.unlockedThemes = ["default"];
+            }
+            state.unlockedThemes.push(themeId);
+            
+            if (!state.walletHistory) state.walletHistory = [];
+            state.walletHistory.unshift({
+                desc: `Покупка на тема: ${themeName}`,
+                amount: -price,
+                type: "withdrawal",
+                date: getFormattedDate()
+            });
+            
+            saveState();
+            updateUI();
+            renderProfile();
+            renderShopThemes();
+            alert(`Успешна покупка! Вече можете да приложите темата "${themeName}". (Офлайн)`);
         }
-        state.unlockedThemes.push(themeId);
-        
-        if (!state.walletHistory) state.walletHistory = [];
-        state.walletHistory.unshift({
-            desc: `Покупка на тема: ${themeName}`,
-            amount: -price,
-            type: "withdrawal",
-            date: getFormattedDate()
-        });
-        
-        saveState();
-        updateUI();
-        renderProfile();
-        renderShopThemes();
-        alert(`Успешна покупка! Вече можете да приложите темата "${themeName}".`);
     }
 }
 
