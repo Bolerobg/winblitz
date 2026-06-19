@@ -1,0 +1,11 @@
+{
+  "name": "tombola-winblitz",
+  "version": "1.0.0",
+  "description": "Skill-based tournament application mockup with admin panel",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx -y http-server -p 3005 -c-1"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
