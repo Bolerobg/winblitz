@@ -65,6 +65,23 @@ document.addEventListener("DOMContentLoaded", () => {
     updateUI();
     bindKeyboardEvents();
     bindAdminPreviewEvents();
+    
+    // Check if ?admin=true is present in the URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('admin') === 'true' || urlParams.get('admin') === '1') {
+        openAdminAuthModal();
+    }
+    
+    // PWA Service Worker Registration
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw.js').then((reg) => {
+                console.log('[PWA] Service Worker registered successfully on scope:', reg.scope);
+            }).catch((err) => {
+                console.error('[PWA] Service Worker registration failed:', err);
+            });
+        });
+    }
 });
 
 // Helper to call backend with user phone header
@@ -72,6 +89,10 @@ async function apiFetch(url, options = {}) {
     if (!options.headers) options.headers = {};
     if (state.user && state.user.phone) {
         options.headers['X-User-Phone'] = state.user.phone;
+    }
+    const adminPassword = sessionStorage.getItem("admin_password");
+    if (adminPassword) {
+        options.headers['X-Admin-Password'] = adminPassword;
     }
     if (options.body && !(options.body instanceof FormData) && !options.headers['Content-Type']) {
         options.headers['Content-Type'] = 'application/json';
@@ -2271,6 +2292,9 @@ function addDemoFunds(amount) {
 
 function switchRole(role) {
     state.role = role;
+    if (role !== "admin") {
+        sessionStorage.removeItem("admin_password");
+    }
     saveState();
     updateUI();
 }
@@ -2313,21 +2337,30 @@ function updateUI() {
     document.getElementById("user-balance-header").textContent = formattedBalance;
     document.getElementById("wallet-balance-num").textContent = formattedBalance;
 
+    const devPanel = document.querySelector(".dev-panel");
     // Update role active classes in Control Panel
     if (state.role === "admin") {
-        document.getElementById("btn-role-admin").classList.add("active");
-        document.getElementById("btn-role-user").classList.remove("active");
+        const btnAdmin = document.getElementById("btn-role-admin");
+        const btnUser = document.getElementById("btn-role-user");
+        if (btnAdmin) btnAdmin.classList.add("active");
+        if (btnUser) btnUser.classList.remove("active");
+        if (devPanel) devPanel.style.display = "flex";
         
         // Inside Phone simulator, show admin screen, hide bottom nav
         showScreen("admin-screen");
-        document.getElementById("app-navigation-bar").style.display = "none";
+        const navBar = document.getElementById("app-navigation-bar");
+        if (navBar) navBar.style.display = "none";
     } else {
-        document.getElementById("btn-role-user").classList.add("active");
-        document.getElementById("btn-role-admin").classList.remove("active");
+        const btnUser = document.getElementById("btn-role-user");
+        const btnAdmin = document.getElementById("btn-role-admin");
+        if (btnUser) btnUser.classList.add("active");
+        if (btnAdmin) btnAdmin.classList.remove("active");
+        if (devPanel) devPanel.style.display = "none";
         
         // Inside Phone simulator, show lobbies screen, show bottom nav
         showScreen("user-lobbies-screen");
-        document.getElementById("app-navigation-bar").style.display = "flex";
+        const navBar = document.getElementById("app-navigation-bar");
+        if (navBar) navBar.style.display = "flex";
         navSwitch("user-lobbies");
     }
 
@@ -4421,4 +4454,76 @@ function applyActiveTheme() {
             screen.classList.add("theme-" + state.activeTheme);
         }
     });
+}
+
+// --- PWA & Administrator Protection Helpers ---
+let logoClickCount = 0;
+let logoClickTimeout = null;
+
+function logoClicked() {
+    logoClickCount++;
+    clearTimeout(logoClickTimeout);
+    
+    if (logoClickCount >= 5) {
+        logoClickCount = 0;
+        openAdminAuthModal();
+    } else {
+        logoClickTimeout = setTimeout(() => {
+            logoClickCount = 0;
+        }, 2000); // Reset clicks after 2 seconds
+    }
+}
+
+function openAdminAuthModal() {
+    const modal = document.getElementById("admin-auth-modal");
+    if (modal) {
+        modal.classList.add("active");
+        document.getElementById("admin-password-input").value = "";
+        document.getElementById("admin-password-input").focus();
+    }
+}
+
+function closeAdminAuthModal() {
+    const modal = document.getElementById("admin-auth-modal");
+    if (modal) {
+        modal.classList.remove("active");
+    }
+}
+
+async function submitAdminPassword() {
+    const pwInput = document.getElementById("admin-password-input").value.trim();
+    if (!pwInput) {
+        alert("Моля, въведете парола!");
+        return;
+    }
+    
+    try {
+        // Authenticate password by calling an admin route with X-Admin-Password header
+        const response = await fetch('/api/admin/mark-shipped', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Password': pwInput
+            },
+            body: JSON.stringify({ archiveId: 0 })
+        });
+        
+        if (response.ok) {
+            sessionStorage.setItem("admin_password", pwInput);
+            closeAdminAuthModal();
+            switchRole("admin");
+        } else {
+            alert("Грешна администраторска парола! Опитайте отново.");
+        }
+    } catch (err) {
+        console.warn("Backend auth failed, trying offline validation:", err);
+        // Fallback for offline mode
+        if (pwInput === 'admin1234') {
+            sessionStorage.setItem("admin_password", pwInput);
+            closeAdminAuthModal();
+            switchRole("admin");
+        } else {
+            alert("Грешна парола или неуспешна връзка със сървъра.");
+        }
+    }
 }

@@ -2,8 +2,15 @@
 <html lang="bg">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>WinBlitz - Турнири за умения и награди</title>
+    <!-- PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="WinBlitz">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0a051b">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,7 +25,7 @@
 
     <div class="app-container">
         <!-- DEVELOPER / DEMO CONTROL PANEL (LEFT SIDE) -->
-        <aside class="dev-panel glass">
+        <aside class="dev-panel glass" style="display: none;">
             <div class="dev-header">
                 <span class="badge dev-badge">ДЕМО СИМУЛАТОР</span>
                 <h2>Контролен Панел</h2>
@@ -83,7 +90,7 @@
                     
                     <!-- SCREEN 1: USER APP HEADER -->
                     <header class="app-header">
-                        <div class="brand">
+                        <div class="brand" onclick="logoClicked()" style="cursor: pointer; -webkit-user-select: none; user-select: none;">
                             <span class="logo-icon">⚡</span>
                             <h1>Win<span>Blitz</span></h1>
                         </div>
@@ -807,6 +814,24 @@
                             <button class="btn btn-secondary w-100" onclick="downloadStoryImageSimulated()" style="margin-top: 8px;">
                                 Свали Story Изображение (Демо)
                             </button>
+                        </div>
+                    </section>
+
+                    <!-- MODAL: ADMIN PASSWORD PROMPT -->
+                    <section id="admin-auth-modal" class="app-screen pop-screen" style="z-index: 10000;">
+                        <div class="back-nav" onclick="closeAdminAuthModal()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                            <span>Назад</span>
+                        </div>
+                        
+                        <div style="padding: 30px 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: calc(100% - 60px);">
+                            <div style="font-size: 50px; margin-bottom: 20px;">🔑</div>
+                            <h2 style="font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 8px; text-align: center;">Вход за Администратор</h2>
+                            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 20px; text-align: center;">Моля, въведете администраторската парола за достъп.</p>
+                            
+                            <input type="password" id="admin-password-input" placeholder="Парола..." style="width: 100%; height: 45px; background: rgba(0,0,0,0.4); border: 1px solid var(--border-light); border-radius: 8px; color: #fff; text-align: center; font-size: 16px; margin-bottom: 15px; outline: none; letter-spacing: 2px;">
+                            
+                            <button class="btn btn-accent w-100" onclick="submitAdminPassword()" style="height: 45px;">Влез</button>
                         </div>
                     </section>
 

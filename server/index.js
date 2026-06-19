@@ -73,6 +73,17 @@ app.use(async (req, res, next) => {
     next();
 });
 
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
+
+function requireAdmin(req, res, next) {
+    const authHeader = req.headers['x-admin-password'];
+    if (authHeader === ADMIN_PASSWORD) {
+        next();
+    } else {
+        res.status(403).json({ error: "Неразрешен достъп! Грешна администраторска парола." });
+    }
+}
+
 // GET /api/user/state
 app.get('/api/user/state', async (req, res) => {
     if (!req.user) {
@@ -856,7 +867,7 @@ app.post('/api/user/lucky-spin', async (req, res) => {
 });
 
 // POST /api/admin/create-lobby
-app.post('/api/admin/create-lobby', async (req, res) => {
+app.post('/api/admin/create-lobby', requireAdmin, async (req, res) => {
     const { prizeName, prizeValue, ticketPrice, maxPlayers, productType, gameType, image, productUrl } = req.body;
     try {
         const max = parseInt(maxPlayers);
@@ -886,7 +897,7 @@ app.post('/api/admin/create-lobby', async (req, res) => {
 });
 
 // POST /api/admin/mark-shipped
-app.post('/api/admin/mark-shipped', async (req, res) => {
+app.post('/api/admin/mark-shipped', requireAdmin, async (req, res) => {
     const { archiveId } = req.body;
     try {
         await pool.query("UPDATE won_prizes SET delivery_status = 'shipped' WHERE archive_id = $1", [archiveId]);
@@ -899,7 +910,7 @@ app.post('/api/admin/mark-shipped', async (req, res) => {
 });
 
 // POST /api/admin/reset-all
-app.post('/api/admin/reset-all', async (req, res) => {
+app.post('/api/admin/reset-all', requireAdmin, async (req, res) => {
     try {
         await pool.query('DELETE FROM wallet_history');
         await pool.query('DELETE FROM won_prizes');
