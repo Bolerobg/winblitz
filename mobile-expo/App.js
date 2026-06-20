@@ -4,7 +4,7 @@ import { WebView } from 'react-native-webview';
 
 export default function App() {
   // ЗАМЕНЕТЕ "YOUR_VPS_IP" с реалния IP адрес на Вашия VPS сървър
-  const VPS_IP = 'YOUR_VPS_IP'; 
+  const VPS_IP = '193.46.243.232'; 
   const PORT = '3080';
   const targetUrl = `http://${VPS_IP}:${PORT}`;
 
