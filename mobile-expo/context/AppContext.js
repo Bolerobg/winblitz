@@ -34,6 +34,7 @@ const INITIAL_STATE = {
     { id: 1, desc: "Начален бонус (Демо)", amount: 100.00, type: "deposit", date: "Днес" }
   ],
   completedTournaments: [],
+  showTutorial: false,
   user: {
     email: null,
     phone: null,
@@ -242,8 +243,10 @@ export function AppProvider({ children }) {
       });
       if (res.ok) {
         const data = await res.json();
+        const isRegistering = !!tempDetails.fullname;
         updateState(prev => ({
           ...prev,
+          showTutorial: isRegistering,
           user: {
             ...prev.user,
             verified: true,
@@ -261,8 +264,10 @@ export function AppProvider({ children }) {
       }
     } catch (e) {
       if (code === emailSimulatedCode) {
+        const isRegistering = !!tempDetails.fullname;
         updateState(prev => ({
           ...prev,
+          showTutorial: isRegistering,
           user: {
             ...prev.user,
             verified: true,

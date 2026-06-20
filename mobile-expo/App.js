@@ -20,9 +20,10 @@ import LuckyWheelModal from './components/LuckyWheelModal';
 import LootboxModal from './components/LootboxModal';
 import AdminAuthModal from './components/AdminAuthModal';
 import FriendDuelModal from './components/FriendDuelModal';
+import OnboardingModal from './components/OnboardingModal';
 
 function AppNavigator() {
-  const { loading, state } = useApp();
+  const { loading, state, updateState } = useApp();
   const [showSplash, setShowSplash] = useState(true);
   const [currentScreen, setCurrentScreen] = useState('Lobbies');
   const [routeParams, setRouteParams] = useState({});
@@ -134,6 +135,11 @@ function AppNavigator() {
         visible={friendDuelVisible}
         onClose={() => setFriendDuelVisible(false)}
         onStartGame={(lobbyId) => navigation.navigate('Game', { lobbyId })}
+      />
+
+      <OnboardingModal
+        visible={state.showTutorial}
+        onClose={() => updateState({ showTutorial: false })}
       />
     </SafeAreaView>
   );

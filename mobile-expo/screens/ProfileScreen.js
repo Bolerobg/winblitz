@@ -558,12 +558,22 @@ export default function ProfileScreen({ onOpenLootbox }) {
 
       {/* Control Panel / Dev Actions */}
       <Text style={styles.sectionHeader}>⚙️ КОНТРОЛЕН ПАНЕЛ</Text>
+      
+      <TouchableOpacity 
+        style={styles.guideBtn} 
+        activeOpacity={0.8}
+        onPress={() => updateState({ showTutorial: true })}
+      >
+        <Ionicons name="school-outline" size={16} color="#a78bfa" />
+        <Text style={styles.guideBtnText}>🎓 Интерактивно демо ръководство</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity 
         style={styles.resetBtn} 
         activeOpacity={0.8}
         onPress={handleResetData}
       >
-        <Ionicons name="trash-outline" size={16} color="#fff" />
+        <Ionicons name="trash-outline" size={16} color="#ef4444" />
         <Text style={styles.resetBtnText}>Изчисти акаунт & Нулирай баланс до €100</Text>
       </TouchableOpacity>
 
@@ -935,6 +945,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 9,
     fontWeight: '800',
+  },
+  guideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(139, 92, 246, 0.25)',
+    gap: 6,
+    marginTop: 10,
+  },
+  guideBtnText: {
+    color: '#a78bfa',
+    fontSize: 11,
+    fontWeight: '700',
   },
   resetBtn: {
     flexDirection: 'row',
