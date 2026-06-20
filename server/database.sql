@@ -91,3 +91,9 @@ ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS product_type VARCHAR(50);
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS image TEXT;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS delivery_status VARCHAR(20) DEFAULT 'pending';
 
+-- Email auth migrations
+ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(100) UNIQUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_code VARCHAR(10);
+
+

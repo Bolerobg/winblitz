@@ -10,6 +10,8 @@ import ProfileScreen from './screens/ProfileScreen';
 import LeagueClanScreen from './screens/LeagueClanScreen';
 import GameScreen from './screens/GameScreen';
 import AdminScreen from './screens/AdminScreen';
+import SplashScreen from './screens/SplashScreen';
+import AuthScreen from './screens/AuthScreen';
 
 // Components
 import Header from './components/Header';
@@ -21,6 +23,7 @@ import FriendDuelModal from './components/FriendDuelModal';
 
 function AppNavigator() {
   const { loading, state } = useApp();
+  const [showSplash, setShowSplash] = useState(true);
   const [currentScreen, setCurrentScreen] = useState('Lobbies');
   const [routeParams, setRouteParams] = useState({});
 
@@ -44,6 +47,14 @@ function AppNavigator() {
         <ActivityIndicator size="large" color="#a855f7" />
       </View>
     );
+  }
+
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
+  }
+
+  if (!state.user || !state.user.verified) {
+    return <AuthScreen />;
   }
 
   // Render correct active screen content

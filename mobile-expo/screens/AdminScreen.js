@@ -311,7 +311,8 @@ export default function AdminScreen({ navigation }) {
                     <Text style={styles.addressText}><Text style={styles.boldText}>Име: </Text>{state.user.fullname}</Text>
                     <Text style={styles.addressText}><Text style={styles.boldText}>Град: </Text>{state.user.city}</Text>
                     <Text style={styles.addressText}><Text style={styles.boldText}>Адрес: </Text>{state.user.address}</Text>
-                    <Text style={styles.addressText}><Text style={styles.boldText}>Тел: </Text>{state.user.phone}</Text>
+                    <Text style={styles.addressText}><Text style={styles.boldText}>Имейл: </Text>{state.user.email}</Text>
+                    {state.user.phone ? <Text style={styles.addressText}><Text style={styles.boldText}>Тел: </Text>{state.user.phone}</Text> : null}
                   </View>
                 ) : (
                   <Text style={styles.metaText}>• Данни за доставка: Симулиран бот адрес</Text>

@@ -20,15 +20,15 @@ const SHOP_THEMES = [
 ];
 
 export default function ProfileScreen({ onOpenLootbox }) {
-  const { state, updateState, apiFetch, registerSMS, verifySMSCode, resetApp, triggerSync } = useApp();
+  const { state, updateState, apiFetch, registerEmail, verifyEmailCode, resetApp, triggerSync } = useApp();
 
   // Verification Form State
   const [fullname, setFullname] = useState(state.user.fullname || '');
   const [city, setCity] = useState(state.user.city || '');
   const [address, setAddress] = useState(state.user.address || '');
-  const [phone, setPhone] = useState(state.user.phone || '');
-  const [smsSent, setSmsSent] = useState(false);
-  const [smsCode, setSmsCode] = useState('');
+  const [email, setEmail] = useState(state.user.email || '');
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailCode, setEmailCode] = useState('');
   const [simulatedCode, setSimulatedCode] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -45,34 +45,34 @@ export default function ProfileScreen({ onOpenLootbox }) {
 
   const league = getLeagueDetails(state.xp);
 
-  // Address SMS code requests
+  // Address Email code requests
   const handleRequestVerification = async () => {
-    if (!fullname || !city || !address || !phone) {
+    if (!fullname || !city || !address || !email) {
       Alert.alert("Грешка", "Моля попълнете всички полета за адрес!");
       return;
     }
     setLoading(true);
-    const res = await registerSMS(fullname, city, address, phone);
+    const res = await registerEmail(email, fullname, city, address);
     setLoading(false);
     if (res.success) {
-      setSmsSent(true);
+      setEmailSent(true);
       setSimulatedCode(res.code);
-      Alert.alert("SMS Симулатор", `Вашият код е: ${res.code}`);
+      Alert.alert("Имейл Симулатор", `Вашият код е: ${res.code}`);
     } else {
       Alert.alert("Грешка", res.error || "Грешка при изпращане на код.");
     }
   };
 
   const handleVerifyCode = async () => {
-    if (!smsCode) return;
+    if (!emailCode) return;
     setLoading(true);
     const tempDetails = { fullname, city, address };
-    const res = await verifySMSCode(phone, smsCode, simulatedCode, tempDetails);
+    const res = await verifyEmailCode(email, emailCode, simulatedCode, tempDetails);
     setLoading(false);
     if (res.success) {
       Alert.alert("Успех", "Профилът Ви е успешно верифициран!");
-      setSmsSent(false);
-      setSmsCode('');
+      setEmailSent(false);
+      setEmailCode('');
     } else {
       Alert.alert("Грешка", res.error || "Невалиден код.");
     }
@@ -320,7 +320,7 @@ export default function ProfileScreen({ onOpenLootbox }) {
           {state.user.fullname ? state.user.fullname : "Профил (Неверифициран)"}
         </Text>
         <Text style={styles.userPhone}>
-          {state.user.phone ? state.user.phone : "Няма телефон"}
+          {state.user.email ? state.user.email : "Няма имейл"}
         </Text>
 
         {/* XP Level bar */}
@@ -384,7 +384,7 @@ export default function ProfileScreen({ onOpenLootbox }) {
         })}
       </View>
 
-      {/* Address SMS Verification */}
+      {/* Address Email Verification */}
       <Text style={styles.sectionHeader}>🔐 Верификация на адрес за награди</Text>
       {state.user.verified ? (
         <View style={styles.verifiedCard}>
@@ -396,7 +396,8 @@ export default function ProfileScreen({ onOpenLootbox }) {
             <Text style={styles.verifiedText}><Text style={styles.verifiedLabel}>Име: </Text>{state.user.fullname}</Text>
             <Text style={styles.verifiedText}><Text style={styles.verifiedLabel}>Град: </Text>{state.user.city}</Text>
             <Text style={styles.verifiedText}><Text style={styles.verifiedLabel}>Адрес: </Text>{state.user.address}</Text>
-            <Text style={styles.verifiedText}><Text style={styles.verifiedLabel}>Телефон: </Text>{state.user.phone}</Text>
+            <Text style={styles.verifiedText}><Text style={styles.verifiedLabel}>Имейл: </Text>{state.user.email}</Text>
+            {state.user.phone && <Text style={styles.verifiedText}><Text style={styles.verifiedLabel}>Телефон: </Text>{state.user.phone}</Text>}
           </View>
           <Text style={styles.verifiedSub}>Всички материални награди от спечелените лобита ще бъдат автоматично адресирани до тези данни.</Text>
         </View>
@@ -427,22 +428,23 @@ export default function ProfileScreen({ onOpenLootbox }) {
           />
           <TextInput 
             style={styles.input} 
-            placeholder="Телефонен номер (+359...)..." 
+            placeholder="Имейл адрес..." 
             placeholderTextColor="#52525b"
-            keyboardType="phone-pad"
-            value={phone}
-            onChangeText={setPhone}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
           />
 
-          {smsSent ? (
+          {emailSent ? (
             <View style={styles.smsCodeRow}>
               <TextInput 
                 style={[styles.input, { flex: 1, marginBottom: 0 }]} 
-                placeholder="4-цифрен код от SMS..." 
+                placeholder="4-цифрен код от имейл..." 
                 placeholderTextColor="#52525b"
                 keyboardType="number-pad"
-                value={smsCode}
-                onChangeText={setSmsCode}
+                value={emailCode}
+                onChangeText={setEmailCode}
               />
               <TouchableOpacity 
                 style={styles.verifyBtn} 

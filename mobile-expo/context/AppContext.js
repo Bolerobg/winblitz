@@ -35,6 +35,7 @@ const INITIAL_STATE = {
   ],
   completedTournaments: [],
   user: {
+    email: null,
     phone: null,
     fullname: null,
     city: null,
@@ -93,9 +94,16 @@ export function AppProvider({ children }) {
           loadedState.lobbies = lobbiesData.map(mapLobbyToClient);
         }
 
-        if (loadedState.user && loadedState.user.phone) {
+        if (loadedState.user && (loadedState.user.email || loadedState.user.phone)) {
+          const authHeaders = {};
+          if (loadedState.user.email) {
+            authHeaders['X-User-Email'] = loadedState.user.email;
+          } else {
+            authHeaders['X-User-Phone'] = loadedState.user.phone;
+          }
+          
           const userRes = await fetch(`${BACKEND_URL}/api/user/state`, {
-            headers: { 'X-User-Phone': loadedState.user.phone }
+            headers: authHeaders
           });
           if (userRes.ok) {
             const data = await userRes.json();
@@ -127,8 +135,9 @@ export function AppProvider({ children }) {
                   }
                 }
               });
-
+ 
               loadedState.user = {
+                email: data.user.email,
                 phone: data.user.phone,
                 fullname: data.user.fullname,
                 city: data.user.city,
@@ -173,7 +182,9 @@ export function AppProvider({ children }) {
   // Wrapper for API fetch requests
   const apiFetch = async (endpoint, options = {}) => {
     if (!options.headers) options.headers = {};
-    if (state.user && state.user.phone) {
+    if (state.user && state.user.email) {
+      options.headers['X-User-Email'] = state.user.email;
+    } else if (state.user && state.user.phone) {
       options.headers['X-User-Phone'] = state.user.phone;
     }
     if (adminPassword) {
@@ -186,12 +197,28 @@ export function AppProvider({ children }) {
   };
 
   // Auth Operations
-  const registerSMS = async (fullname, city, address, phone) => {
+  const checkEmail = async (email) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/register-sms`, {
+      const res = await fetch(`${BACKEND_URL}/api/auth/check-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, fullname, city, address })
+        body: JSON.stringify({ email })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+      return { success: false, error: "Грешка при проверка на имейл" };
+    } catch (e) {
+      return { registered: false, offline: true };
+    }
+  };
+
+  const registerEmail = async (email, fullname, city, address) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/register-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, fullname, city, address })
       });
       if (res.ok) {
         const data = await res.json();
@@ -201,18 +228,17 @@ export function AppProvider({ children }) {
         return { success: false, error: err.error };
       }
     } catch (e) {
-      // Offline fallback
       const code = Math.floor(1000 + Math.random() * 9000).toString();
       return { success: true, code, offline: true };
     }
   };
 
-  const verifySMSCode = async (phone, code, smsSimulatedCode, tempDetails) => {
+  const verifyEmailCode = async (email, code, emailSimulatedCode, tempDetails) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/verify-sms`, {
+      const res = await fetch(`${BACKEND_URL}/api/auth/verify-email`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, code })
+        body: JSON.stringify({ email, code })
       });
       if (res.ok) {
         const data = await res.json();
@@ -221,30 +247,29 @@ export function AppProvider({ children }) {
           user: {
             ...prev.user,
             verified: true,
+            email: data.user.email,
             phone: data.user.phone,
             fullname: data.user.fullname,
             city: data.user.city,
             address: data.user.address
           }
         }));
-        // Reload state to sync
-        triggerSync(data.user.phone);
+        triggerSync(data.user.email);
         return { success: true };
       } else {
         return { success: false, error: "Невалиден верификационен код." };
       }
     } catch (e) {
-      // Offline fallback
-      if (code === smsSimulatedCode) {
+      if (code === emailSimulatedCode) {
         updateState(prev => ({
           ...prev,
           user: {
             ...prev.user,
             verified: true,
-            phone,
-            fullname: tempDetails.fullname,
-            city: tempDetails.city,
-            address: tempDetails.address
+            email,
+            fullname: tempDetails.fullname || prev.user.fullname || '',
+            city: tempDetails.city || prev.user.city || '',
+            address: tempDetails.address || prev.user.address || ''
           }
         }));
         return { success: true, offline: true };
@@ -253,11 +278,12 @@ export function AppProvider({ children }) {
     }
   };
 
-  const triggerSync = async (phone = state.user.phone) => {
-    if (!phone) return;
+  const triggerSync = async (email = state.user.email) => {
+    if (!email) return;
     try {
+      const authHeaders = { 'X-User-Email': email };
       const userRes = await fetch(`${BACKEND_URL}/api/user/state`, {
-        headers: { 'X-User-Phone': phone }
+        headers: authHeaders
       });
       if (userRes.ok) {
         const data = await userRes.json();
@@ -291,6 +317,7 @@ export function AppProvider({ children }) {
             lastSpinDate: data.user.last_spin_date || null,
             user: {
               ...prev.user,
+              email: data.user.email,
               phone: data.user.phone,
               fullname: data.user.fullname,
               city: data.user.city,
@@ -388,8 +415,9 @@ export function AppProvider({ children }) {
       setAdminPassword,
       updateState,
       apiFetch,
-      registerSMS,
-      verifySMSCode,
+      checkEmail,
+      registerEmail,
+      verifyEmailCode,
       resetApp,
       joinLobby,
       triggerSync,
