@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function GameScreen({ route, navigation }) {
   const { lobbyId } = route.params || {};
-  const { state, apiFetch, triggerSync } = useApp();
+  const { state, apiFetch, triggerSync, updateState, mapLobbyToClient } = useApp();
 
   const lobby = (state.lobbies || []).find(l => l.id === lobbyId);
   const gameType = lobby ? lobby.gameType : 'math';
@@ -203,11 +203,15 @@ export default function GameScreen({ route, navigation }) {
 
       if (res.ok) {
         const data = await res.json();
+        const lobbyData = mapLobbyToClient(data.finalLobbyState || data.lobby);
+        if (!lobbyData) {
+          throw new Error("Lobby data missing in server response");
+        }
         // Sort players by finished time
-        const players = data.lobby.players || [];
+        const players = lobbyData.players || [];
         const sorted = [...players].sort((a, b) => a.time - b.time);
         setResultsList(sorted);
-        setWinnerName(data.lobby.winner);
+        setWinnerName(lobbyData.winner);
         setShowResults(true);
         triggerSync();
       } else {
@@ -224,7 +228,9 @@ export default function GameScreen({ route, navigation }) {
       ];
 
       const botNames = ["Христо В.", "Иван П.", "Мартин С.", "Теодора А.", "Стефан Р.", "Мария Г."];
-      const botCount = lobby ? lobby.players.filter(p => !p.isMe).length : 2;
+      const botCount = (lobby && Array.isArray(lobby.players)) 
+        ? lobby.players.filter(p => !p.isMe).length 
+        : 2;
 
       for (let i = 0; i < botCount; i++) {
         const botBaseTime = parseFloat((Math.random() * 3.5 + 4.2).toFixed(2));
