@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -305,7 +305,12 @@ export default function ProfileScreen({ onOpenLootbox }) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+      style={{ flex: 1 }}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Profile Header Card */}
       <View style={styles.profileHeader}>
         <View style={styles.avatarCircle}>
@@ -566,6 +571,7 @@ export default function ProfileScreen({ onOpenLootbox }) {
         </View>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

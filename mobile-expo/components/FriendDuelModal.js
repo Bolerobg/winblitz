@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, Modal, TouchableOpacity, TextInput, Alert, Clipboard, Share } from 'react-native';
+import { StyleSheet, View, Text, Modal, TouchableOpacity, TextInput, Alert, Clipboard, Share, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
@@ -152,7 +152,10 @@ export default function FriendDuelModal({ visible, onClose, onStartGame }) {
 
   return (
     <Modal visible={visible} transparent={true} animationType="slide">
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalOverlay}
+      >
         <View style={styles.modalContent}>
           {/* Close button */}
           <TouchableOpacity 
@@ -236,7 +239,7 @@ export default function FriendDuelModal({ visible, onClose, onStartGame }) {
             </View>
           )}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { StyleSheet, View, Text, Modal, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, View, Text, Modal, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
@@ -23,7 +23,10 @@ export default function AdminAuthModal({ visible, onClose, onAuthSuccess }) {
 
   return (
     <Modal visible={visible} transparent={true} animationType="fade">
-      <View style={styles.modalOverlay}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.modalOverlay}
+      >
         <View style={styles.modalContent}>
           {/* Close button */}
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
@@ -66,7 +69,7 @@ export default function AdminAuthModal({ visible, onClose, onAuthSuccess }) {
             <Text style={styles.submitBtnText}>ВХОД</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
