@@ -1,25 +1,138 @@
-import React from 'react';
-import { StyleSheet, SafeAreaView, StatusBar, Platform } from 'react-native';
-import { WebView } from 'react-native-webview';
+import React, { useState } from 'react';
+import { StyleSheet, SafeAreaView, View, ActivityIndicator, StatusBar, Platform } from 'react-native';
+import { AppProvider, useApp } from './context/AppContext';
 
-export default function App() {
-  // ЗАМЕНЕТЕ "YOUR_VPS_IP" с реалния IP адрес на Вашия VPS сървър
-  const VPS_IP = '193.46.243.232'; 
-  const PORT = '3080';
-  const targetUrl = `http://${VPS_IP}:${PORT}`;
+// Screens
+import LobbiesScreen from './screens/LobbiesScreen';
+import HistoryScreen from './screens/HistoryScreen';
+import WalletScreen from './screens/WalletScreen';
+import ProfileScreen from './screens/ProfileScreen';
+import LeagueClanScreen from './screens/LeagueClanScreen';
+import GameScreen from './screens/GameScreen';
+import AdminScreen from './screens/AdminScreen';
+
+// Components
+import Header from './components/Header';
+import BottomNav from './components/BottomNav';
+import LuckyWheelModal from './components/LuckyWheelModal';
+import LootboxModal from './components/LootboxModal';
+import AdminAuthModal from './components/AdminAuthModal';
+import FriendDuelModal from './components/FriendDuelModal';
+
+function AppNavigator() {
+  const { loading, state } = useApp();
+  const [currentScreen, setCurrentScreen] = useState('Lobbies');
+  const [routeParams, setRouteParams] = useState({});
+
+  // Modals Visibility
+  const [luckyWheelVisible, setLuckyWheelVisible] = useState(false);
+  const [lootboxVisible, setLootboxVisible] = useState(false);
+  const [adminAuthVisible, setAdminAuthVisible] = useState(false);
+  const [friendDuelVisible, setFriendDuelVisible] = useState(false);
+
+  // Custom simple navigation routing
+  const navigation = {
+    navigate: (screenName, params = {}) => {
+      setCurrentScreen(screenName);
+      setRouteParams(params);
+    }
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#a855f7" />
+      </View>
+    );
+  }
+
+  // Render correct active screen content
+  const renderScreen = () => {
+    switch (currentScreen) {
+      case 'Lobbies':
+        return (
+          <LobbiesScreen 
+            navigation={navigation}
+            onOpenLuckyWheel={() => setLuckyWheelVisible(true)}
+            onOpenFriendDuel={() => setFriendDuelVisible(true)}
+          />
+        );
+      case 'History':
+        return <HistoryScreen />;
+      case 'Wallet':
+        return <WalletScreen />;
+      case 'Profile':
+        return (
+          <ProfileScreen 
+            onOpenLootbox={() => setLootboxVisible(true)}
+          />
+        );
+      case 'LeagueClan':
+        return <LeagueClanScreen />;
+      case 'Game':
+        return <GameScreen route={{ params: routeParams }} navigation={navigation} />;
+      case 'Admin':
+        return <AdminScreen navigation={navigation} />;
+      default:
+        return <LobbiesScreen navigation={navigation} />;
+    }
+  };
+
+  const showHeaderAndNav = currentScreen !== 'Game';
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0a051b" />
-      <WebView 
-        source={{ uri: targetUrl }} 
-        style={styles.webview}
-        javaScriptEnabled={true}
-        domStorageEnabled={true}
-        startInLoadingState={true}
-        scalesPageToFit={false}
+      
+      {showHeaderAndNav && (
+        <Header 
+          onOpenAdminAuth={() => setAdminAuthVisible(true)} 
+        />
+      )}
+
+      {/* Main Content View */}
+      <View style={styles.mainContent}>
+        {renderScreen()}
+      </View>
+
+      {showHeaderAndNav && (
+        <BottomNav 
+          currentScreen={currentScreen} 
+          onSelectScreen={(screenKey) => navigation.navigate(screenKey)} 
+        />
+      )}
+
+      {/* Popups and Modals */}
+      <LuckyWheelModal 
+        visible={luckyWheelVisible} 
+        onClose={() => setLuckyWheelVisible(false)} 
+      />
+
+      <LootboxModal 
+        visible={lootboxVisible} 
+        onClose={() => setLootboxVisible(false)} 
+      />
+
+      <AdminAuthModal 
+        visible={adminAuthVisible} 
+        onClose={() => setAdminAuthVisible(false)}
+        onAuthSuccess={() => navigation.navigate('Admin')}
+      />
+
+      <FriendDuelModal
+        visible={friendDuelVisible}
+        onClose={() => setFriendDuelVisible(false)}
+        onStartGame={(lobbyId) => navigation.navigate('Game', { lobbyId })}
       />
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <AppProvider>
+      <AppNavigator />
+    </AppProvider>
   );
 }
 
@@ -29,7 +142,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a051b',
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
-  webview: {
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0a051b',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mainContent: {
     flex: 1,
   },
 });
