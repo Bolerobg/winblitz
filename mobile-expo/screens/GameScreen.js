@@ -21,6 +21,7 @@ export default function GameScreen({ route, navigation }) {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [errors, setErrors] = useState(0);
   const [penaltyTime, setPenaltyTime] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   const startTimeRef = useRef(Date.now());
   const timerIntervalRef = useRef(null);
@@ -712,6 +713,12 @@ export default function GameScreen({ route, navigation }) {
           </View>
         </View>
       )}
+
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#a855f7" />
+        </View>
+      )}
     </View>
   );
 }
@@ -1167,5 +1174,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '800',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(5, 2, 15, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
   }
 });
