@@ -177,17 +177,29 @@ export default function LuckyWheelModal({ visible, onClose }) {
                   <View 
                     key={i} 
                     style={[
-                      styles.wheelSegment, 
+                      styles.wheelSegmentContainer, 
                       { 
-                        transform: [
-                          { rotate: `${angle}deg` }, 
-                          { translateY: -WHEEL_SIZE / 4 }
-                        ],
-                        backgroundColor: colors[i]
+                        transform: [{ rotate: `${angle}deg` }]
                       }
                     ]}
                   >
-                    <Text style={styles.segmentText}>{r.name.replace(" Бонус", "")}</Text>
+                    {/* Triangular Slice using CSS borders */}
+                    <View style={[
+                      styles.wheelTriangle, 
+                      { 
+                        borderTopColor: colors[i],
+                        borderLeftWidth: WHEEL_SIZE * 0.288,
+                        borderRightWidth: WHEEL_SIZE * 0.288,
+                        borderTopWidth: WHEEL_SIZE / 2,
+                      }
+                    ]} />
+                    
+                    {/* Text positioned radially */}
+                    <View style={styles.segmentTextContainer}>
+                      <Text style={styles.segmentText}>
+                        {r.name.replace(" Бонус", "")}
+                      </Text>
+                    </View>
                   </View>
                 );
               })}
@@ -304,32 +316,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#1b1236',
   },
-  wheelSegment: {
+  wheelSegmentContainer: {
     position: 'absolute',
     width: WHEEL_SIZE,
-    height: WHEEL_SIZE / 2,
-    justifyContent: 'center',
-    alignItems: 'center',
+    height: WHEEL_SIZE,
     top: 0,
     left: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: '#0f0a24',
-    borderRightWidth: 1,
-    borderRightColor: '#0f0a24',
-    // Rotate relative to top center
-    transformOrigin: '50% 100%',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  wheelTriangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  segmentTextContainer: {
+    position: 'absolute',
+    top: 25,
+    width: WHEEL_SIZE * 0.5,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   segmentText: {
     color: '#fff',
-    fontSize: 11,
-    fontWeight: '800',
+    fontSize: 10,
+    fontWeight: '900',
     transform: [{ rotate: '90deg' }],
     width: 80,
     textAlign: 'center',
-    // Light text shadow
-    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    textShadowRadius: 3,
   },
   innerCircle: {
     position: 'absolute',
