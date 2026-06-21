@@ -19,13 +19,20 @@ app.use(express.json());
 
 // Initialize Database
 async function initDB() {
-    try {
-        const sqlPath = path.join(__dirname, 'database.sql');
-        const sql = fs.readFileSync(sqlPath, 'utf8');
-        await pool.query(sql);
-        console.log("Database tables initialized successfully!");
-    } catch (err) {
-        console.error("Error running database initialization script:", err);
+    let retries = 5;
+    while (retries > 0) {
+        try {
+            const sqlPath = path.join(__dirname, 'database.sql');
+            const sql = fs.readFileSync(sqlPath, 'utf8');
+            await pool.query(sql);
+            console.log("Database tables initialized successfully!");
+            break;
+        } catch (err) {
+            console.error("Error running database initialization script, retrying in 2 seconds...", err.message);
+            retries -= 1;
+            if (retries === 0) console.error("Could not initialize database after multiple attempts.");
+            await new Promise(resolve => setTimeout(resolve, 2000));
+        }
     }
 }
 initDB();
