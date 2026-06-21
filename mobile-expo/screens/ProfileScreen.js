@@ -57,7 +57,7 @@ export default function ProfileScreen({ onOpenLootbox }) {
     if (res.success) {
       setEmailSent(true);
       setSimulatedCode(res.code);
-      Alert.alert("Имейл Симулатор", `Вашият код е: ${res.code}`);
+      Alert.alert("Кодът е изпратен", `Изпратихме код за потвърждение на ${email}`);
     } else {
       Alert.alert("Грешка", res.error || "Грешка при изпращане на код.");
     }

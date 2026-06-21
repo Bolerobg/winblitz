@@ -262,25 +262,7 @@ export default function AuthScreen() {
           )}
         </View>
 
-        {/* Mock Email Simulator Drawer */}
-        {step === 'verify' && simulatedCode ? (
-          <View style={styles.simulatorDrawer}>
-            <View style={styles.simulatorHeader}>
-              <Ionicons name="mail-open-outline" size={18} color="#fbbf24" style={{ marginRight: 6 }} />
-              <Text style={styles.simulatorTitle}>📬 Симулатор на Получен Имейл</Text>
-            </View>
-            <View style={styles.simulatorBody}>
-              <Text style={styles.simulatorText}>От: <Text style={styles.simulatorLabel}>verify@winblitz.bg</Text></Text>
-              <Text style={styles.simulatorText}>Тема: <Text style={styles.simulatorLabel}>Вашият верификационен код</Text></Text>
-              <View style={styles.simulatorDivider} />
-              <Text style={styles.simulatorMessage}>
-                Здравейте,{"\n"}
-                Вашият сигурен код за регистрация и вход в WinBlitz е:
-              </Text>
-              <Text style={styles.simulatorCodeText}>{simulatedCode}</Text>
-            </View>
-          </View>
-        ) : null}
+        {/* Mock Email Simulator Drawer removed as requested */}
       </ScrollView>
     </KeyboardAvoidingView>
   );
