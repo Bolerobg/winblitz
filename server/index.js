@@ -96,6 +96,17 @@ app.use(async (req, res, next) => {
             console.error("Middleware auth error (phone):", err);
         }
     }
+    if (req.user) {
+        if (!req.user.unlocked_achievements || !Array.isArray(req.user.unlocked_achievements)) {
+            req.user.unlocked_achievements = [];
+        }
+        if (!req.user.unlocked_avatars || !Array.isArray(req.user.unlocked_avatars)) {
+            req.user.unlocked_avatars = ['👤'];
+        }
+        if (!req.user.unlocked_themes || !Array.isArray(req.user.unlocked_themes)) {
+            req.user.unlocked_themes = ['default'];
+        }
+    }
     next();
 });
 
@@ -332,8 +343,9 @@ app.post('/api/user/claim-quest', async (req, res) => {
         
         // Auto check millionaire achievement
         let userState = updated.rows[0];
-        if (newBalance >= 50.00 && !userState.unlocked_achievements.includes('millionaire')) {
-            const achievements = [...userState.unlocked_achievements, 'millionaire'];
+        const currentAchievements = userState.unlocked_achievements || [];
+        if (newBalance >= 50.00 && !currentAchievements.includes('millionaire')) {
+            const achievements = [...currentAchievements, 'millionaire'];
             const u = await pool.query('UPDATE users SET unlocked_achievements = $1 WHERE id = $2 RETURNING *', [achievements, req.user.id]);
             userState = u.rows[0];
         }
@@ -372,8 +384,9 @@ app.post('/api/user/buy-avatar', async (req, res) => {
         );
         
         let userState = updated.rows[0];
-        if (unlockedAvatars.length >= 3 && !userState.unlocked_achievements.includes('collector')) {
-            const achievements = [...userState.unlocked_achievements, 'collector'];
+        const currentAchievements = userState.unlocked_achievements || [];
+        if (unlockedAvatars.length >= 3 && !currentAchievements.includes('collector')) {
+            const achievements = [...currentAchievements, 'collector'];
             const u = await pool.query('UPDATE users SET unlocked_achievements = $1 WHERE id = $2 RETURNING *', [achievements, req.user.id]);
             userState = u.rows[0];
         }
@@ -497,13 +510,14 @@ app.post('/api/user/open-lootbox', async (req, res) => {
         );
         
         let userState = updated.rows[0];
-        if (newBalance >= 50.00 && !userState.unlocked_achievements.includes('millionaire')) {
-            const achievements = [...userState.unlocked_achievements, 'millionaire'];
+        const currentAchievements = userState.unlocked_achievements || [];
+        if (newBalance >= 50.00 && !currentAchievements.includes('millionaire')) {
+            const achievements = [...currentAchievements, 'millionaire'];
             const u = await pool.query('UPDATE users SET unlocked_achievements = $1 WHERE id = $2 RETURNING *', [achievements, req.user.id]);
             userState = u.rows[0];
         }
-        if (unlockedAvatars.length >= 3 && !userState.unlocked_achievements.includes('collector')) {
-            const achievements = [...userState.unlocked_achievements, 'collector'];
+        if (unlockedAvatars.length >= 3 && !currentAchievements.includes('collector')) {
+            const achievements = [...currentAchievements, 'collector'];
             const u = await pool.query('UPDATE users SET unlocked_achievements = $1 WHERE id = $2 RETURNING *', [achievements, req.user.id]);
             userState = u.rows[0];
         }
@@ -823,7 +837,7 @@ app.post('/api/lobbies/finish', async (req, res) => {
             }
             
             // Unlocks Achievements Checks
-            let achievements = [...userState.unlocked_achievements];
+            let achievements = Array.isArray(userState.unlocked_achievements) ? [...userState.unlocked_achievements] : [];
             if (winnerName === "Вие" && !isPracticeGame) {
                 // Speed check (<12s)
                 if (parseFloat(finalTime) < 12.00 && !achievements.includes('speed')) {
@@ -964,7 +978,7 @@ app.post('/api/user/lucky-spin', async (req, res) => {
         const q = quests.find(item => item.id === 'spin');
         if (q && !q.claimed) q.current = Math.min(q.target, q.current + 1);
         
-        let achievements = [...req.user.unlocked_achievements];
+        let achievements = Array.isArray(req.user.unlocked_achievements) ? [...req.user.unlocked_achievements] : [];
         if (newBalance >= 50.00 && !achievements.includes('millionaire')) {
             achievements.push('millionaire');
         }

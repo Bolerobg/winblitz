@@ -96,4 +96,9 @@ ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(100) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_code VARCHAR(10);
 
+-- Normalize existing NULL arrays
+UPDATE users SET unlocked_achievements = ARRAY[]::TEXT[] WHERE unlocked_achievements IS NULL;
+UPDATE users SET unlocked_avatars = ARRAY['👤']::TEXT[] WHERE unlocked_avatars IS NULL;
+UPDATE users SET unlocked_themes = ARRAY['default']::TEXT[] WHERE unlocked_themes IS NULL;
+
 

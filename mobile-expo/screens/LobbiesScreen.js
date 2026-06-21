@@ -13,7 +13,7 @@ export default function LobbiesScreen({ navigation, onOpenLuckyWheel, onOpenFrie
   const handleJoinLobby = async (lobby) => {
     if (lobby.status === 'finished') return;
     
-    // Check if SMS verification is required (only for real tournament mode)
+    // Check if email verification is required (only for real tournament mode)
     if (!state.practiceModeActive && !state.user.verified) {
       alert("Моля, първо верифицирайте профила си от таб 'Профил'!");
       return;

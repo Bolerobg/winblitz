@@ -20,7 +20,7 @@ export default function FriendDuelModal({ visible, onClose, onStartGame }) {
 
     if (!state.practiceModeActive) {
       if (!state.user.verified) {
-        Alert.alert("Грешка", "Моля първо верифицирайте профила си с SMS от таб 'Профил'!");
+        Alert.alert("Грешка", "Моля първо верифицирайте профила си с имейл от таб 'Профил'!");
         onClose();
         return;
       }

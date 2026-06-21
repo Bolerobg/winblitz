@@ -81,7 +81,7 @@ export default function WalletScreen() {
             color={state.user.verified ? "#10b981" : "#f59e0b"} 
           />
           <Text style={[styles.balanceStatusText, state.user.verified ? styles.verifiedText : styles.unverifiedText]}>
-            {state.user.verified ? "Акаунтът е верифициран с SMS" : "Изисква се SMS верификация"}
+            {state.user.verified ? "Акаунтът е верифициран с имейл" : "Изисква се имейл верификация"}
           </Text>
         </View>
       </View>
