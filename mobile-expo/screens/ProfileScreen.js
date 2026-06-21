@@ -294,8 +294,8 @@ export default function ProfileScreen({ onOpenLootbox }) {
             setFullname('');
             setCity('');
             setAddress('');
-            setPhone('');
-            setSmsSent(false);
+            setEmail('');
+            setEmailSent(false);
             setLoading(false);
             Alert.alert("Готово", "Данните бяха нулирани!");
           } 

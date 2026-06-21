@@ -2031,6 +2031,15 @@ async function verifySMSCode() {
     }
 }
 
+function webLogout() {
+    if (confirm("Сигурни ли сте, че искате да излезете от профила?")) {
+        resetStateToDefault();
+        renderProfile();
+        closePopScreen();
+        alert("Успешно излязохте от профила.");
+    }
+}
+
 function renderProfile() {
     const unverifiedView = document.getElementById("profile-unverified-view");
     const verifiedView = document.getElementById("profile-verified-view");

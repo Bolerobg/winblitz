@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     borderColor: '#8b5cf6',
     borderRadius: 24,
     width: width * 0.9,
-    maxHeight: height * 0.8,
+    maxHeight: height * 0.85,
     padding: 24,
     alignItems: 'center',
     shadowColor: '#d946ef',
@@ -198,17 +198,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#8b5cf6',
   },
   iconWrapper: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: 'rgba(20, 14, 52, 0.6)',
     borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
     color: '#fff',
     textAlign: 'center',
@@ -216,16 +216,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   subtitle: {
-    fontSize: 10,
+    fontSize: 9,
     color: '#a1a1aa',
     fontWeight: '700',
     letterSpacing: 2,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   contentContainer: {
     width: '100%',
     marginVertical: 10,
-    maxHeight: height * 0.35, // Ensures content is scrollable and does not overflow container limits
+    flexShrink: 1, // Ensures content is scrollable and automatically fits inside container bounds
   },
   descText: {
     fontSize: 14,
@@ -252,7 +252,7 @@ const styles = StyleSheet.create({
   footerRow: {
     flexDirection: 'row',
     width: '100%',
-    marginTop: 24,
+    marginTop: 16,
     justifyContent: 'space-between',
     alignItems: 'center',
   },
