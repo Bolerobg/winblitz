@@ -96,6 +96,12 @@ ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(100) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_code VARCHAR(10);
 
+-- Lobbies and completed_games practice/friend duel migrations
+ALTER TABLE lobbies ADD COLUMN IF NOT EXISTS is_friend_duel BOOLEAN DEFAULT FALSE;
+ALTER TABLE lobbies ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE;
+ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE;
+ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS is_friend_duel BOOLEAN DEFAULT FALSE;
+
 -- Normalize existing NULL arrays
 UPDATE users SET unlocked_achievements = ARRAY[]::TEXT[] WHERE unlocked_achievements IS NULL;
 UPDATE users SET unlocked_avatars = ARRAY['👤']::TEXT[] WHERE unlocked_avatars IS NULL;
