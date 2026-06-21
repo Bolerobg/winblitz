@@ -3,6 +3,8 @@ const cors = require('cors');
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3005;
@@ -41,6 +43,54 @@ function buildDefaultQuests() {
         { id: "practice", desc: "Изиграйте 2 Тренировки", target: 2, current: 0, reward: 1.00, claimed: false },
         { id: "win", desc: "Спечелете 1 Реална Игра", target: 1, current: 0, reward: 1.50, claimed: false }
     ];
+}
+
+// SMTP Transporter Config
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true', // true for 465, false for 587/25
+    auth: {
+        user: process.env.SMTP_USER || '',
+        pass: process.env.SMTP_PASS || ''
+    }
+});
+
+// Helper to send real verification email
+async function sendVerificationEmail(toEmail, code) {
+    if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+        console.log(`[SMTP SKIPPED] Missing SMTP credentials. Verification code for ${toEmail}: ${code}`);
+        return false;
+    }
+    try {
+        const mailOptions = {
+            from: process.env.SMTP_FROM || `"WinBlitz Support" <${process.env.SMTP_USER}>`,
+            to: toEmail,
+            subject: 'Вашият код за верификация в WinBlitz ⚡',
+            text: `Здравейте,\n\nВашият верификационен код за WinBlitz е: ${code}\n\nКодът е валиден за следващите 10 минути.\n\nПоздрави,\nЕкипът на WinBlitz`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 10px;">
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        <h2 style="color: #8b5cf6; font-size: 26px; margin: 0;">WinBlitz ⚡</h2>
+                    </div>
+                    <p style="font-size: 16px; color: #333; line-height: 1.5;">Здравейте,</p>
+                    <p style="font-size: 16px; color: #333; line-height: 1.5;">Благодарим Ви за регистрацията в WinBlitz! Използвайте кода по-долу, за да верифицирате профила си:</p>
+                    <div style="text-align: center; margin: 30px 0;">
+                        <span style="font-size: 32px; font-weight: bold; color: #8b5cf6; letter-spacing: 4px; padding: 10px 20px; background-color: #f5f3ff; border: 1px dashed #8b5cf6; border-radius: 5px;">${code}</span>
+                    </div>
+                    <p style="font-size: 14px; color: #666; line-height: 1.5;">Ако не сте поискали този код, моля игнорирайте този имейл.</p>
+                    <hr style="border: none; border-top: 1px solid #e9e9e9; margin: 30px 0;" />
+                    <p style="font-size: 12px; color: #999; text-align: center; margin: 0;">© 2026 WinBlitz. Всички права запазени.</p>
+                </div>
+            `
+        };
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[SMTP SUCCESS] Verification email sent to ${toEmail}. Message ID: ${info.messageId}`);
+        return true;
+    } catch (err) {
+        console.error(`[SMTP ERROR] Failed to send email to ${toEmail}:`, err);
+        return false;
+    }
 }
 
 // MiddleWare to fetch/authenticate user by email or phone header
@@ -263,6 +313,9 @@ app.post('/api/auth/register-email', async (req, res) => {
                 [user.id, "Начален бонус (Демо)", 100.00, "deposit"]
             );
         }
+        
+        // Send real verification email via SMTP if configured
+        await sendVerificationEmail(emailVal, simulatedCode);
         
         res.json({ success: true, code: simulatedCode, user });
     } catch (err) {
@@ -588,7 +641,8 @@ app.get('/api/lobbies', async (req, res) => {
 
 // POST /api/lobbies/join
 app.post('/api/lobbies/join', async (req, res) => {
-    const { lobbyId, isPractice } = req.body;
+    const { lobbyId } = req.body;
+    const isPractice = req.body.isPractice === true || req.body.isPractice === 'true';
     if (!lobbyId) return res.status(400).json({ error: "Missing lobbyId" });
     
     try {
@@ -682,7 +736,8 @@ app.post('/api/lobbies/bot-join', async (req, res) => {
 // POST /api/lobbies/create-duel
 app.post('/api/lobbies/create-duel', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const { gameType, entryFee, isPractice } = req.body;
+    const { gameType, entryFee } = req.body;
+    const isPractice = req.body.isPractice === true || req.body.isPractice === 'true';
     
     try {
         const bet = parseFloat(entryFee);
