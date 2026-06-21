@@ -6,7 +6,8 @@ import {
   Modal, 
   TouchableOpacity, 
   Dimensions, 
-  Platform 
+  Platform,
+  ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -116,7 +117,7 @@ export default function OnboardingModal({ visible, onClose }) {
           <Text style={styles.subtitle}>РЪКОВОДСТВО ЗА ПОТРЕБИТЕЛЯ</Text>
 
           {/* Content Scroll View */}
-          <View style={styles.contentContainer}>
+          <ScrollView style={styles.contentContainer} contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={true}>
             <Text style={styles.descText}>{activeSlide.desc}</Text>
             
             {activeSlide.highlight ? (
@@ -125,7 +126,7 @@ export default function OnboardingModal({ visible, onClose }) {
                 <Text style={styles.highlightText}>{activeSlide.highlight}</Text>
               </View>
             ) : null}
-          </View>
+          </ScrollView>
 
           {/* Footer Navigation Buttons */}
           <View style={styles.footerRow}>
@@ -223,8 +224,8 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     width: '100%',
-    flexGrow: 1,
     marginVertical: 10,
+    maxHeight: height * 0.35, // Ensures content is scrollable and does not overflow container limits
   },
   descText: {
     fontSize: 14,

@@ -20,7 +20,7 @@ const SHOP_THEMES = [
 ];
 
 export default function ProfileScreen({ onOpenLootbox }) {
-  const { state, updateState, apiFetch, registerEmail, verifyEmailCode, resetApp, triggerSync } = useApp();
+  const { state, updateState, apiFetch, registerEmail, verifyEmailCode, resetApp, triggerSync, logout } = useApp();
 
   // Verification Form State
   const [fullname, setFullname] = useState(state.user.fullname || '');
@@ -304,6 +304,23 @@ export default function ProfileScreen({ onOpenLootbox }) {
     );
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      "Изход от профила",
+      "Сигурни ли сте, че искате да излезете от текущия акаунт?",
+      [
+        { text: "Отказ", style: "cancel" },
+        { 
+          text: "Изход", 
+          style: "destructive", 
+          onPress: async () => {
+            await logout();
+          } 
+        }
+      ]
+    );
+  };
+
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
@@ -566,6 +583,15 @@ export default function ProfileScreen({ onOpenLootbox }) {
       >
         <Ionicons name="school-outline" size={16} color="#a78bfa" />
         <Text style={styles.guideBtnText}>🎓 Интерактивно демо ръководство</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.logoutBtn} 
+        activeOpacity={0.8}
+        onPress={handleLogout}
+      >
+        <Ionicons name="log-out-outline" size={16} color="#f43f5e" />
+        <Text style={styles.logoutBtnText}>Изход от профила</Text>
       </TouchableOpacity>
 
       <TouchableOpacity 
@@ -960,6 +986,23 @@ const styles = StyleSheet.create({
   },
   guideBtnText: {
     color: '#a78bfa',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(244, 63, 94, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.25)',
+    gap: 6,
+    marginTop: 10,
+  },
+  logoutBtnText: {
+    color: '#f43f5e',
     fontSize: 11,
     fontWeight: '700',
   },

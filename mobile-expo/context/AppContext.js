@@ -412,6 +412,10 @@ export function AppProvider({ children }) {
     }
   };
 
+  const logout = async () => {
+    updateState(INITIAL_STATE);
+  };
+
   return (
     <AppContext.Provider value={{
       state,
@@ -427,6 +431,7 @@ export function AppProvider({ children }) {
       joinLobby,
       triggerSync,
       mapLobbyToClient,
+      logout,
       BACKEND_URL
     }}>
       {children}
