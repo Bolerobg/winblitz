@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Linking } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Linking, Share } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -9,6 +9,18 @@ export default function HistoryScreen() {
   const handleDownloadWallpaper = (url) => {
     const downloadUrl = url || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=1080&auto=format&fit=crop';
     Linking.openURL(downloadUrl).catch(err => console.error("Couldn't open URL", err));
+  };
+
+  const handleShareWin = async (prizeName, prizeValue) => {
+    try {
+      const message = `🔥 Току-що спечелих "${prizeName}" (Стойност: €${prizeValue.toFixed(2)}) в WinBlitz!\n\nИзтегли приложението и въведи моя промокод ${state.user.promo_code}, за да вземем и двамата по €5 БОНУС!\n\n👉 https://winblitz.app`;
+      await Share.share({
+        message: message,
+        title: 'Спечелих в WinBlitz!'
+      });
+    } catch (error) {
+      console.error(error.message);
+    }
   };
 
   return (
@@ -92,6 +104,16 @@ export default function HistoryScreen() {
                 >
                   <Ionicons name="download-outline" size={16} color="#fff" />
                   <Text style={styles.downloadBtnText}>Изтегли Тапет</Text>
+                </TouchableOpacity>
+              )}
+              {/* Share Win button */}
+              {isWin && (
+                <TouchableOpacity 
+                  style={styles.shareBtn}
+                  onPress={() => handleShareWin(game.prizeName, game.prizeValue)}
+                >
+                  <Ionicons name="share-social" size={16} color="#fff" />
+                  <Text style={styles.shareBtnText}>Похвали се на приятел (+ Вземи €5)</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -291,5 +313,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 11,
     fontWeight: '800',
+  },
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ec4899', // Pinkish viral color
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 10,
+    gap: 6,
+    shadowColor: '#ec4899',
+    shadowOpacity: 0.4,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  shareBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
   }
 });

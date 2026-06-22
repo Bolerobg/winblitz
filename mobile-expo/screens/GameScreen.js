@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, Animated, Easing, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, TouchableOpacity, ScrollView, Alert, Animated, Easing, ActivityIndicator, Share } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -710,6 +710,21 @@ export default function GameScreen({ route, navigation }) {
               })}
             </View>
 
+            {winnerName === 'Вие' && (
+              <TouchableOpacity 
+                style={styles.shareWinBtn}
+                onPress={async () => {
+                  try {
+                    const msg = `🔥 Току-що спечелих турнир за ${lobby ? lobby.prizeName : 'голяма награда'} в WinBlitz!\n\nИзтегли приложението и въведи моя промокод ${state.user.promo_code}, за да вземем и двамата по €5 БОНУС!\n\n👉 https://winblitz.app`;
+                    await Share.share({ message: msg, title: 'Спечелих в WinBlitz!' });
+                  } catch(e) {}
+                }}
+              >
+                <Ionicons name="share-social" size={18} color="#fff" style={{marginRight: 8}} />
+                <Text style={styles.shareWinBtnText}>ПОХВАЛИ СЕ (+ ВЗЕМИ €5)</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity 
               style={styles.closeResultsBtn}
               onPress={() => navigation.navigate('Lobbies')}
@@ -1180,6 +1195,26 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 12,
     fontWeight: '800',
+  },
+  shareWinBtn: {
+    flexDirection: 'row',
+    backgroundColor: '#ec4899',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    width: '100%',
+    shadowColor: '#ec4899',
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  shareWinBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
