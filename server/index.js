@@ -196,7 +196,7 @@ app.get('/api/user/state', async (req, res) => {
         });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -236,7 +236,7 @@ app.post('/api/auth/register-sms', async (req, res) => {
         res.json({ success: true, code: simulatedCode, user });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -261,7 +261,7 @@ app.post('/api/auth/verify-sms', async (req, res) => {
         }
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -278,7 +278,7 @@ app.post('/api/auth/check-email', async (req, res) => {
         res.json({ registered: false });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -327,7 +327,7 @@ app.post('/api/auth/register-email', async (req, res) => {
         res.json({ success: true, code: simulatedCode, user });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -353,7 +353,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
         }
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -369,7 +369,7 @@ app.post('/api/user/update-address', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -413,7 +413,7 @@ app.post('/api/user/claim-quest', async (req, res) => {
         res.json({ success: true, user: userState });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -454,7 +454,7 @@ app.post('/api/user/buy-avatar', async (req, res) => {
         res.json({ success: true, user: userState });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -487,7 +487,7 @@ app.post('/api/user/buy-theme', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -503,7 +503,7 @@ app.post('/api/user/select-avatar', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -519,7 +519,7 @@ app.post('/api/user/select-theme', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -585,7 +585,7 @@ app.post('/api/user/open-lootbox', async (req, res) => {
         res.json({ success: true, rewardText, user: userState });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -600,7 +600,7 @@ app.post('/api/user/simulate-new-day', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -631,7 +631,7 @@ app.post('/api/user/reset-state', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -642,7 +642,7 @@ app.get('/api/lobbies', async (req, res) => {
         res.json(result.rows);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -736,7 +736,7 @@ app.post('/api/lobbies/bot-join', async (req, res) => {
         res.json({ success: true, lobby: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -790,7 +790,7 @@ app.post('/api/lobbies/create-duel', async (req, res) => {
         });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -958,7 +958,7 @@ app.post('/api/lobbies/finish', async (req, res) => {
         });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -971,7 +971,7 @@ app.post('/api/user/join-clan', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -983,7 +983,7 @@ app.post('/api/user/leave-clan', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -1006,7 +1006,7 @@ app.post('/api/user/simulate-spin', async (req, res) => {
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -1083,7 +1083,7 @@ app.post('/api/admin/create-lobby', requireAdmin, async (req, res) => {
         res.json({ success: true, lobby: result.rows[0] });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -1096,7 +1096,7 @@ app.post('/api/admin/mark-shipped', requireAdmin, async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
@@ -1117,7 +1117,7 @@ app.post('/api/admin/reset-all', requireAdmin, async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
