@@ -27,6 +27,7 @@ export default function AuthScreen() {
   const [fullname, setFullname] = useState('');
   const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   
   const [loading, setLoading] = useState(false);
 
@@ -71,7 +72,7 @@ export default function AuthScreen() {
     }
 
     setLoading(true);
-    const res = await registerPassword(email, password, fullname, city, address);
+    const res = await registerPassword(email, password, fullname, city, address, referralCode);
     setLoading(false);
 
     if (res.success) {
@@ -251,6 +252,15 @@ export default function AuthScreen() {
                 placeholderTextColor="#52525b"
                 value={address}
                 onChangeText={setAddress}
+              />
+
+              <TextInput 
+                style={styles.input}
+                placeholder="Промокод от приятел (По избор)..."
+                placeholderTextColor="#52525b"
+                autoCapitalize="characters"
+                value={referralCode}
+                onChangeText={setReferralCode}
               />
 
               <TouchableOpacity 

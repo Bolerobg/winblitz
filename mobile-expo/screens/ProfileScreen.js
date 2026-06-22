@@ -573,6 +573,20 @@ export default function ProfileScreen({ onOpenLootbox }) {
         )}
       </View>
 
+      {/* Referral Section */}
+      <Text style={styles.sectionHeader}>🤝 ПОКАНИ ПРИЯТЕЛ</Text>
+      <View style={styles.referralCard}>
+        <Text style={styles.referralDesc}>
+          Покани приятел с твоя личен промокод! Ако той се регистрира и депозира поне €10, **двамата ще получите по €5 бонус!**
+        </Text>
+        <View style={styles.promoCodeBox}>
+          <Text style={styles.promoCodeText} selectable={true}>
+            {state.user?.promo_code || "Няма код"}
+          </Text>
+        </View>
+        <Text style={styles.referralNote}>Натисни продължително върху кода, за да го копираш.</Text>
+      </View>
+
       {/* Control Panel / Dev Actions */}
       <Text style={styles.sectionHeader}>⚙️ КОНТРОЛЕН ПАНЕЛ</Text>
       
@@ -971,6 +985,41 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 9,
     fontWeight: '800',
+  },
+  referralCard: {
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    padding: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  referralDesc: {
+    color: '#a1a1aa',
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  promoCodeBox: {
+    backgroundColor: '#000',
+    borderWidth: 1,
+    borderColor: '#10b981',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginBottom: 10,
+  },
+  promoCodeText: {
+    color: '#10b981',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  referralNote: {
+    color: '#52525b',
+    fontSize: 10,
   },
   guideBtn: {
     flexDirection: 'row',

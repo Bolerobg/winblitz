@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS users (
     loot_boxes_owned INTEGER DEFAULT 0,
     unlocked_achievements TEXT[] DEFAULT ARRAY[]::TEXT[],
     daily_quests JSONB DEFAULT '[]'::JSONB,
-    last_spin_date VARCHAR(50)
+    last_spin_date VARCHAR(50),
+    promo_code VARCHAR(20) UNIQUE,
+    referred_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    referral_bonus_paid BOOLEAN DEFAULT FALSE
 );
 
 CREATE TABLE IF NOT EXISTS wallet_history (
@@ -118,3 +121,17 @@ CREATE TABLE IF NOT EXISTS withdrawals (
     iban VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add referral columns if they don't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='promo_code') THEN
+        ALTER TABLE users ADD COLUMN promo_code VARCHAR(20) UNIQUE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='referred_by') THEN
+        ALTER TABLE users ADD COLUMN referred_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='referral_bonus_paid') THEN
+        ALTER TABLE users ADD COLUMN referral_bonus_paid BOOLEAN DEFAULT FALSE;
+    END IF;
+END $$;

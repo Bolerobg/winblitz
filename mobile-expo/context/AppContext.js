@@ -143,6 +143,7 @@ export function AppProvider({ children }) {
                 fullname: data.user.fullname,
                 city: data.user.city,
                 address: data.user.address,
+                promo_code: data.user.promo_code,
                 verified: data.user.verified,
                 gamesPlayed: played,
                 gamesWon: won,
@@ -197,12 +198,12 @@ export function AppProvider({ children }) {
     return fetch(`${BACKEND_URL}${endpoint}`, options);
   };
 
-  const registerPassword = async (email, password, fullname, city, address) => {
+  const registerPassword = async (email, password, fullname, city, address, referralCode = '') => {
     try {
       const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, fullname, city, address })
+        body: JSON.stringify({ email, password, fullname, city, address, referralCode })
       });
       if (res.ok) {
         const data = await res.json();
@@ -215,7 +216,8 @@ export function AppProvider({ children }) {
             email: data.user.email,
             fullname: data.user.fullname,
             city: data.user.city,
-            address: data.user.address
+            address: data.user.address,
+            promo_code: data.user.promo_code
           }
         }));
         triggerSync(data.user.email || data.user.phone);
@@ -248,6 +250,8 @@ export function AppProvider({ children }) {
             phone: data.user.phone,
             fullname: data.user.fullname,
             city: data.user.city,
+            address: data.user.address,
+            promo_code: data.user.promo_code
             address: data.user.address
           }
         }));

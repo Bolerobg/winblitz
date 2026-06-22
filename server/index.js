@@ -46,6 +46,11 @@ function getFormattedDate() {
     return now.toLocaleTimeString("bg-BG", { hour: "2-digit", minute: "2-digit" }) + " - " + now.toLocaleDateString("bg-BG");
 }
 
+// Helper to generate promo code
+function generatePromoCode() {
+    return 'WIN-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
 // Default quests builder
 function buildDefaultQuests() {
     return [
@@ -117,9 +122,9 @@ app.use(async (req, res, next) => {
             } else {
                 // Auto create unverified user
                 const newUser = await pool.query(
-                    `INSERT INTO users (email, balance, unlocked_avatars, unlocked_themes, daily_quests) 
-                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2) RETURNING *`,
-                    [emailVal, JSON.stringify(buildDefaultQuests())]
+                    `INSERT INTO users (email, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code) 
+                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2, $3) RETURNING *`,
+                    [emailVal, JSON.stringify(buildDefaultQuests()), generatePromoCode()]
                 );
                 req.user = newUser.rows[0];
                 
@@ -140,9 +145,9 @@ app.use(async (req, res, next) => {
             } else {
                 // Auto create unverified user
                 const newUser = await pool.query(
-                    `INSERT INTO users (phone, balance, unlocked_avatars, unlocked_themes, daily_quests) 
-                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2) RETURNING *`,
-                    [phone.trim(), JSON.stringify(buildDefaultQuests())]
+                    `INSERT INTO users (phone, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code) 
+                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2, $3) RETURNING *`,
+                    [phone.trim(), JSON.stringify(buildDefaultQuests()), generatePromoCode()]
                 );
                 req.user = newUser.rows[0];
                 
@@ -205,28 +210,39 @@ app.get('/api/user/state', async (req, res) => {
 
 // POST /api/auth/register-sms
 app.post('/api/auth/register-sms', async (req, res) => {
-    const { phone, fullname, city, address } = req.body;
+    const { phone, fullname, city, address, referralCode } = req.body;
     if (!phone) return res.status(400).json({ error: "Missing phone" });
     
     try {
         const simulatedCode = Math.floor(1000 + Math.random() * 9000).toString();
         console.log(`[SMS SIMULATION] Code for ${phone}: ${simulatedCode}`);
         
+        let referrerId = null;
+        if (referralCode && referralCode.trim() !== '') {
+            const referrerRes = await pool.query('SELECT id FROM users WHERE promo_code = $1', [referralCode.trim().toUpperCase()]);
+            if (referrerRes.rows.length > 0) {
+                referrerId = referrerRes.rows[0].id;
+            }
+        }
+
         let result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
         let user;
         
         if (result.rows.length > 0) {
+            // Update existing unverified account, also set referred_by if applicable and not already set
+            const existingUser = result.rows[0];
+            const finalReferrerId = existingUser.referred_by || referrerId;
             const updated = await pool.query(
-                `UPDATE users SET fullname = $1, city = $2, address = $3, sms_code = $4, verified = FALSE 
-                 WHERE phone = $5 RETURNING *`,
-                [fullname, city, address, simulatedCode, phone]
+                `UPDATE users SET fullname = $1, city = $2, address = $3, sms_code = $4, verified = FALSE, referred_by = $5 
+                 WHERE phone = $6 RETURNING *`,
+                [fullname, city, address, simulatedCode, finalReferrerId, phone]
             );
             user = updated.rows[0];
         } else {
             const inserted = await pool.query(
-                `INSERT INTO users (phone, fullname, city, address, sms_code, balance, unlocked_avatars, unlocked_themes, daily_quests) 
-                 VALUES ($1, $2, $3, $4, $5, 100.00, ARRAY['👤'], ARRAY['default'], $6) RETURNING *`,
-                [phone, fullname, city, address, simulatedCode, JSON.stringify(buildDefaultQuests())]
+                `INSERT INTO users (phone, fullname, city, address, sms_code, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code, referred_by) 
+                 VALUES ($1, $2, $3, $4, $5, 100.00, ARRAY['👤'], ARRAY['default'], $6, $7, $8) RETURNING *`,
+                [phone, fullname, city, address, simulatedCode, JSON.stringify(buildDefaultQuests()), generatePromoCode(), referrerId]
             );
             user = inserted.rows[0];
             
@@ -270,7 +286,7 @@ app.post('/api/auth/verify-sms', async (req, res) => {
 
 // POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
-    const { email, password, fullname, city, address } = req.body;
+    const { email, password, fullname, city, address, referralCode } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
     
     try {
@@ -278,23 +294,46 @@ app.post('/api/auth/register', async (req, res) => {
         let result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
         
         if (result.rows.length > 0) {
-            return res.status(400).json({ error: "Потребител с този имейл вече съществува." });
+            // Unverified user might exist from middleware. Let's see if they have password.
+            if (result.rows[0].password_hash) {
+                return res.status(400).json({ error: "Потребител с този имейл вече съществува." });
+            }
+        }
+        
+        let referrerId = null;
+        if (referralCode && referralCode.trim() !== '') {
+            const referrerRes = await pool.query('SELECT id FROM users WHERE promo_code = $1', [referralCode.trim().toUpperCase()]);
+            if (referrerRes.rows.length > 0) {
+                referrerId = referrerRes.rows[0].id;
+            }
         }
         
         const salt = await bcrypt.genSalt(10);
         const hash = await bcrypt.hash(password, salt);
         
-        const inserted = await pool.query(
-            `INSERT INTO users (email, password_hash, fullname, city, address, verified, balance, unlocked_avatars, unlocked_themes, daily_quests) 
-             VALUES ($1, $2, $3, $4, $5, TRUE, 100.00, ARRAY['👤'], ARRAY['default'], $6) RETURNING *`,
-            [emailVal, hash, fullname, city, address, JSON.stringify(buildDefaultQuests())]
-        );
-        const user = inserted.rows[0];
-        
-        await pool.query(
-            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
-            [user.id, "Начален бонус (Демо)", 100.00, "deposit"]
-        );
+        let user;
+        if (result.rows.length > 0) {
+            const existingUser = result.rows[0];
+            const finalReferrerId = existingUser.referred_by || referrerId;
+            const updated = await pool.query(
+                `UPDATE users SET password_hash = $1, fullname = $2, city = $3, address = $4, verified = TRUE, referred_by = $5 
+                 WHERE email = $6 RETURNING *`,
+                [hash, fullname, city, address, finalReferrerId, emailVal]
+            );
+            user = updated.rows[0];
+        } else {
+            const inserted = await pool.query(
+                `INSERT INTO users (email, password_hash, fullname, city, address, verified, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code, referred_by) 
+                 VALUES ($1, $2, $3, $4, $5, TRUE, 100.00, ARRAY['👤'], ARRAY['default'], $6, $7, $8) RETURNING *`,
+                [emailVal, hash, fullname, city, address, JSON.stringify(buildDefaultQuests()), generatePromoCode(), referrerId]
+            );
+            user = inserted.rows[0];
+            
+            await pool.query(
+                'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                [user.id, "Начален бонус (Демо)", 100.00, "deposit"]
+            );
+        }
         
         res.json({ success: true, user });
     } catch (err) {
@@ -1181,6 +1220,23 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
             'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
             [req.user.id, `Депозит чрез Stripe`, amount, "deposit"]
         );
+        
+        // Referral Bonus Logic
+        if (amount >= 10 && req.user.referred_by && !req.user.referral_bonus_paid) {
+            // Give 5 eur to the new user
+            await pool.query('UPDATE users SET balance = balance + 5, referral_bonus_paid = TRUE WHERE id = $1', [req.user.id]);
+            await pool.query(
+                'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                [req.user.id, "Реферален бонус (Ти използва код)", 5.00, "deposit"]
+            );
+            
+            // Give 5 eur to the referrer
+            await pool.query('UPDATE users SET balance = balance + 5 WHERE id = $1', [req.user.referred_by]);
+            await pool.query(
+                'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                [req.user.referred_by, `Реферален бонус (Поканен приятел депозира)`, 5.00, "deposit"]
+            );
+        }
         
         const updatedUser = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
         res.json({ success: true, user: updatedUser.rows[0] });
