@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function AdminScreen({ navigation }) {
-  const { state, updateState, apiFetch, triggerSync, adminPassword } = useApp();
+  const { state, updateState, apiFetch, triggerSync } = useApp();
   const [loading, setLoading] = useState(false);
 
   // Form states for creating lobby
@@ -22,9 +22,7 @@ export default function AdminScreen({ navigation }) {
 
   const fetchWithdrawals = async () => {
     try {
-      const res = await apiFetch('/api/admin/withdrawals', {
-        headers: { 'x-admin-password': adminPassword }
-      });
+      const res = await apiFetch('/api/admin/withdrawals');
       if (res.ok) {
         const data = await res.json();
         setWithdrawals(data.withdrawals || []);
@@ -187,7 +185,6 @@ export default function AdminScreen({ navigation }) {
     try {
       const res = await apiFetch(`/api/admin/withdrawal/${action}`, {
         method: 'POST',
-        headers: { 'x-admin-password': adminPassword },
         body: JSON.stringify({ id })
       });
       if (res.ok) {

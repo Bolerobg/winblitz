@@ -4,20 +4,28 @@ import { Ionicons } from '@expo/vector-icons';
 import { useApp } from '../context/AppContext';
 
 export default function AdminAuthModal({ visible, onClose, onAuthSuccess }) {
-  const { setAdminPassword, updateState } = useApp();
+  const { adminLogin } = useApp();
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = () => {
-    if (password === 'admin1234') {
-      setAdminPassword(password);
-      updateState({ role: 'admin' });
+  const handleSubmit = async () => {
+    if (!password) {
+      Alert.alert("Грешка", "Въведете администраторска парола.");
+      return;
+    }
+    
+    setLoading(true);
+    const result = await adminLogin(password);
+    setLoading(false);
+    
+    if (result.success) {
       setPassword('');
       Alert.alert("Успех", "Администраторският достъп е активиран!");
       onAuthSuccess();
       onClose();
     } else {
-      Alert.alert("Грешка", "Невалидна парола!");
+      Alert.alert("Грешка", result.error || "Невалидна парола!");
     }
   };
 
@@ -65,8 +73,9 @@ export default function AdminAuthModal({ visible, onClose, onAuthSuccess }) {
             style={styles.submitBtn} 
             activeOpacity={0.8}
             onPress={handleSubmit}
+            disabled={loading}
           >
-            <Text style={styles.submitBtnText}>ВХОД</Text>
+            <Text style={styles.submitBtnText}>{loading ? "ПРОВЕРКА..." : "ВХОД"}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>

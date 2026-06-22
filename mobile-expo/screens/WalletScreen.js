@@ -45,6 +45,7 @@ export default function WalletScreen() {
     const initRes = await initPaymentSheet({
       merchantDisplayName: 'WinBlitz',
       paymentIntentClientSecret: data.clientSecret,
+      returnURL: 'tombola://stripe-redirect',
     });
 
     if (initRes.error) {
@@ -61,7 +62,7 @@ export default function WalletScreen() {
       return;
     }
 
-    const confirmRes = await confirmDeposit(amount);
+    const confirmRes = await confirmDeposit(amount, data.paymentIntentId);
     if (confirmRes.success) {
       Alert.alert("Успех", `Успешно депозирахте €${amount.toFixed(2)}!`);
     } else {

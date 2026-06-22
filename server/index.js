@@ -5,9 +5,10 @@ const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 require('dotenv').config();
 
-const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_123');
+const stripe = process.env.STRIPE_SECRET_KEY ? require('stripe')(process.env.STRIPE_SECRET_KEY) : null;
 
 const app = express();
 const PORT = process.env.PORT || 3005;
@@ -16,6 +17,51 @@ const PORT = process.env.PORT || 3005;
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@db:5432/winblitz?sslmode=disable'
 });
+
+const tokenSecret = process.env.AUTH_TOKEN_SECRET || process.env.ADMIN_PASSWORD || crypto.randomBytes(32).toString('hex');
+const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30;
+const ADMIN_TOKEN_TTL_SECONDS = 60 * 60 * 12;
+
+function encodeTokenPart(value) {
+    return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+function signToken(payload, ttlSeconds = TOKEN_TTL_SECONDS) {
+    const header = { alg: 'HS256', typ: 'JWT' };
+    const body = {
+        ...payload,
+        exp: Math.floor(Date.now() / 1000) + ttlSeconds
+    };
+    const unsigned = `${encodeTokenPart(header)}.${encodeTokenPart(body)}`;
+    const signature = crypto.createHmac('sha256', tokenSecret).update(unsigned).digest('base64url');
+    return `${unsigned}.${signature}`;
+}
+
+function verifyToken(token, expectedType) {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const unsigned = `${parts[0]}.${parts[1]}`;
+    const expected = crypto.createHmac('sha256', tokenSecret).update(unsigned).digest('base64url');
+    const actual = parts[2];
+    if (expected.length !== actual.length) return null;
+    if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) return null;
+    
+    try {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        if (expectedType && payload.type !== expectedType) return null;
+        if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
+        return payload;
+    } catch (err) {
+        return null;
+    }
+}
+
+function getBearerToken(req) {
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
+    return null;
+}
 
 app.use(cors());
 app.use(express.json());
@@ -110,10 +156,20 @@ async function sendVerificationEmail(toEmail, code) {
 
 // MiddleWare to fetch/authenticate user by email or phone header
 app.use(async (req, res, next) => {
+    const tokenPayload = verifyToken(getBearerToken(req), 'user');
     const email = req.headers['x-user-email'];
     const phone = req.headers['x-user-phone'];
     
-    if (email && email !== 'null' && email !== 'undefined' && email.trim() !== '') {
+    if (tokenPayload && tokenPayload.userId) {
+        try {
+            const result = await pool.query('SELECT * FROM users WHERE id = $1', [tokenPayload.userId]);
+            if (result.rows.length > 0) {
+                req.user = result.rows[0];
+            }
+        } catch (err) {
+            console.error("Middleware auth error (token):", err);
+        }
+    } else if (email && email !== 'null' && email !== 'undefined' && email.trim() !== '') {
         try {
             const emailVal = email.trim().toLowerCase();
             let result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
@@ -175,16 +231,37 @@ app.use(async (req, res, next) => {
     next();
 });
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin1234';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 
 function requireAdmin(req, res, next) {
-    const authHeader = req.headers['x-admin-password'];
-    if (authHeader === ADMIN_PASSWORD) {
+    const adminToken = req.headers['x-admin-token'] || getBearerToken(req);
+    const payload = verifyToken(adminToken, 'admin');
+    if (payload) {
         next();
     } else {
         res.status(403).json({ error: "Неразрешен достъп! Грешна администраторска парола." });
     }
 }
+
+app.post('/api/admin/login', async (req, res) => {
+    const { password } = req.body;
+    if (!ADMIN_PASSWORD) {
+        return res.status(503).json({ error: "Администраторският достъп не е конфигуриран." });
+    }
+    const passwordBuffer = Buffer.from(password || '');
+    const expectedBuffer = Buffer.from(ADMIN_PASSWORD);
+    if (!password || passwordBuffer.length !== expectedBuffer.length) {
+        return res.status(403).json({ error: "Невалидна парола!" });
+    }
+    const isValid = crypto.timingSafeEqual(passwordBuffer, expectedBuffer);
+    if (!isValid) {
+        return res.status(403).json({ error: "Невалидна парола!" });
+    }
+    res.json({
+        success: true,
+        adminToken: signToken({ type: 'admin' }, ADMIN_TOKEN_TTL_SECONDS)
+    });
+});
 
 // GET /api/user/state
 app.get('/api/user/state', async (req, res) => {
@@ -274,7 +351,11 @@ app.post('/api/auth/verify-sms', async (req, res) => {
                 'UPDATE users SET verified = TRUE, sms_code = NULL WHERE id = $1 RETURNING *',
                 [user.id]
             );
-            res.json({ success: true, user: verifiedUser.rows[0] });
+            res.json({
+                success: true,
+                user: verifiedUser.rows[0],
+                authToken: signToken({ type: 'user', userId: verifiedUser.rows[0].id })
+            });
         } else {
             res.status(400).json({ success: false, error: "Wrong code" });
         }
@@ -335,7 +416,11 @@ app.post('/api/auth/register', async (req, res) => {
             );
         }
         
-        res.json({ success: true, user });
+        res.json({
+            success: true,
+            user,
+            authToken: signToken({ type: 'user', userId: user.id })
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message || "Server error" });
@@ -362,7 +447,11 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: "Грешен имейл или парола." });
         }
         
-        res.json({ success: true, user });
+        res.json({
+            success: true,
+            user,
+            authToken: signToken({ type: 'user', userId: user.id })
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message || "Server error" });
@@ -720,30 +809,43 @@ app.post('/api/lobbies/join', async (req, res) => {
     const isPractice = req.body.isPractice === true || req.body.isPractice === 'true';
     if (!lobbyId) return res.status(400).json({ error: "Missing lobbyId" });
     
+    const client = await pool.connect();
     try {
-        const result = await pool.query('SELECT * FROM lobbies WHERE id = $1', [lobbyId]);
-        if (result.rows.length === 0) return res.status(404).json({ error: "Lobby not found" });
+        await client.query('BEGIN');
+        
+        const result = await client.query('SELECT * FROM lobbies WHERE id = $1 FOR UPDATE', [lobbyId]);
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ error: "Lobby not found" });
+        }
         
         const lobby = result.rows[0];
         const ticketPrice = parseFloat(lobby.ticket_price);
         
-        let newBalance = req.user ? parseFloat(req.user.balance) : 0;
-        let newLootBoxes = req.user ? req.user.loot_boxes_owned : 0;
+        let userState = req.user;
+        if (req.user) {
+            const userResult = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
+            userState = userResult.rows[0];
+        }
         
-        if (!isPractice && req.user) {
+        let newBalance = userState ? parseFloat(userState.balance) : 0;
+        let newLootBoxes = userState ? userState.loot_boxes_owned : 0;
+        
+        if (!isPractice && userState) {
             if (newBalance < ticketPrice) {
+                await client.query('ROLLBACK');
                 return res.status(400).json({ error: "Insufficient balance" });
             }
             newBalance -= ticketPrice;
             newLootBoxes += 1;
             
             // Deduct balance
-            await pool.query('UPDATE users SET balance = $1, loot_boxes_owned = $2 WHERE id = $3', [newBalance, newLootBoxes, req.user.id]);
+            await client.query('UPDATE users SET balance = $1, loot_boxes_owned = $2 WHERE id = $3', [newBalance, newLootBoxes, userState.id]);
             
             // Add wallet entry
-            await pool.query(
+            await client.query(
                 'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
-                [req.user.id, `Вход за турнир: ${lobby.prize_name}`, -ticketPrice, "withdrawal"]
+                [userState.id, `Вход за турнир: ${lobby.prize_name}`, -ticketPrice, "withdrawal"]
             );
         }
         
@@ -761,19 +863,29 @@ app.post('/api/lobbies/join', async (req, res) => {
             });
         }
         
-        const updatedLobby = await pool.query(
+        if (players.length > lobby.max_players) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: "Lobby is full" });
+        }
+        
+        const updatedLobby = await client.query(
             'UPDATE lobbies SET players = $1, status = $2, is_practice = $3 WHERE id = $4 RETURNING *',
             [JSON.stringify(players), 'playing', isPractice, lobbyId]
         );
         
+        await client.query('COMMIT');
+        
         res.json({
             success: true,
             lobby: updatedLobby.rows[0],
-            user: req.user ? { ...req.user, balance: newBalance, loot_boxes_owned: newLootBoxes } : null
+            user: userState ? { ...userState, balance: newBalance, loot_boxes_owned: newLootBoxes } : null
         });
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err);
         res.status(500).json({ error: err.message || "Server error" });
+    } finally {
+        client.release();
     }
 });
 
@@ -1325,18 +1437,23 @@ app.post('/api/admin/reset-all', requireAdmin, async (req, res) => {
 // ---------------- STRIPE & PAYMENTS ----------------
 app.post('/api/payment/create-intent', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Неоторизиран достъп" });
-    const { amount } = req.body;
+    if (!stripe) return res.status(503).json({ error: "Stripe не е конфигуриран." });
+    const amount = parseFloat(req.body.amount);
     if (!amount || amount < 5) return res.status(400).json({ error: "Минималната сума за депозит е €5.00" });
 
     try {
         const paymentIntent = await stripe.paymentIntents.create({
             amount: Math.round(amount * 100),
             currency: 'eur',
+            metadata: {
+                user_id: String(req.user.id),
+                amount: amount.toFixed(2)
+            },
             automatic_payment_methods: {
                 enabled: true,
             },
         });
-        res.json({ clientSecret: paymentIntent.client_secret });
+        res.json({ clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id });
     } catch (err) {
         console.error("Stripe create intent error:", err);
         res.status(500).json({ error: "Грешка при комуникация със Stripe." });
@@ -1345,30 +1462,69 @@ app.post('/api/payment/create-intent', async (req, res) => {
 
 app.post('/api/payment/confirm-deposit', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Неоторизиран достъп" });
-    const { amount } = req.body;
+    if (!stripe) return res.status(503).json({ error: "Stripe не е конфигуриран." });
+    const amount = parseFloat(req.body.amount);
+    const { paymentIntentId } = req.body;
+    if (!amount || !paymentIntentId) {
+        return res.status(400).json({ error: "Липсва информация за плащането." });
+    }
     
     try {
-        await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.user.id]);
-        await pool.query(
-            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
-            [req.user.id, `Депозит чрез Stripe`, amount, "deposit"]
-        );
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        const expectedAmount = Math.round(amount * 100);
+        if (
+            paymentIntent.status !== 'succeeded' ||
+            paymentIntent.amount_received !== expectedAmount ||
+            paymentIntent.currency !== 'eur' ||
+            paymentIntent.metadata?.user_id !== String(req.user.id)
+        ) {
+            return res.status(400).json({ error: "Плащането не е потвърдено от Stripe." });
+        }
         
-        // Referral Bonus Logic
-        if (amount >= 10 && req.user.referred_by && !req.user.referral_bonus_paid) {
-            // Give 5 eur to the new user
-            await pool.query('UPDATE users SET balance = balance + 5, referral_bonus_paid = TRUE WHERE id = $1', [req.user.id]);
-            await pool.query(
-                'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
-                [req.user.id, "Реферален бонус (Ти използва код)", 5.00, "deposit"]
+        const client = await pool.connect();
+        
+        try {
+            await client.query('BEGIN');
+            
+            const existing = await client.query(
+                'SELECT id FROM wallet_history WHERE stripe_payment_intent_id = $1',
+                [paymentIntentId]
+            );
+            if (existing.rows.length > 0) {
+                await client.query('ROLLBACK');
+                const updatedUser = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+                return res.json({ success: true, user: updatedUser.rows[0], alreadyConfirmed: true });
+            }
+            
+            await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.user.id]);
+            await client.query(
+                'INSERT INTO wallet_history (user_id, description, amount, type, stripe_payment_intent_id) VALUES ($1, $2, $3, $4, $5)',
+                [req.user.id, `Депозит чрез Stripe`, amount, "deposit", paymentIntentId]
             );
             
-            // Give 5 eur to the referrer
-            await pool.query('UPDATE users SET balance = balance + 5 WHERE id = $1', [req.user.referred_by]);
-            await pool.query(
-                'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
-                [req.user.referred_by, `Реферален бонус (Поканен приятел депозира)`, 5.00, "deposit"]
-            );
+            // Referral Bonus Logic
+            if (amount >= 10 && req.user.referred_by && !req.user.referral_bonus_paid) {
+                // Give 5 eur to the new user
+                await client.query('UPDATE users SET balance = balance + 5, referral_bonus_paid = TRUE WHERE id = $1', [req.user.id]);
+                await client.query(
+                    'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                    [req.user.id, "Реферален бонус (Ти използва код)", 5.00, "deposit"]
+                );
+                
+                // Give 5 eur to the referrer
+                await client.query('UPDATE users SET balance = balance + 5 WHERE id = $1', [req.user.referred_by]);
+                await client.query(
+                    'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                    [req.user.referred_by, `Реферален бонус (Поканен приятел депозира)`, 5.00, "deposit"]
+                );
+            }
+            
+            await client.query('COMMIT');
+        } catch (err) {
+            await client.query('ROLLBACK');
+            throw err;
+        } finally {
+            client.release();
         }
         
         const updatedUser = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
@@ -1426,12 +1582,7 @@ app.get('/api/user/withdrawals', async (req, res) => {
     }
 });
 
-app.get('/api/admin/withdrawals', async (req, res) => {
-    const adminPassword = req.headers['x-admin-password'];
-    if (adminPassword !== 'admin1234') {
-        return res.status(403).json({ error: "Грешна парола!" });
-    }
-
+app.get('/api/admin/withdrawals', requireAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT w.*, u.fullname, u.email, u.phone 
@@ -1446,12 +1597,7 @@ app.get('/api/admin/withdrawals', async (req, res) => {
     }
 });
 
-app.post('/api/admin/withdrawal/approve', async (req, res) => {
-    const adminPassword = req.headers['x-admin-password'];
-    if (adminPassword !== 'admin1234') {
-        return res.status(403).json({ error: "Грешна парола!" });
-    }
-
+app.post('/api/admin/withdrawal/approve', requireAdmin, async (req, res) => {
     const { id } = req.body;
     try {
         await pool.query("UPDATE withdrawals SET status = 'approved' WHERE id = $1", [id]);
@@ -1461,12 +1607,7 @@ app.post('/api/admin/withdrawal/approve', async (req, res) => {
     }
 });
 
-app.post('/api/admin/withdrawal/reject', async (req, res) => {
-    const adminPassword = req.headers['x-admin-password'];
-    if (adminPassword !== 'admin1234') {
-        return res.status(403).json({ error: "Грешна парола!" });
-    }
-
+app.post('/api/admin/withdrawal/reject', requireAdmin, async (req, res) => {
     const { id } = req.body;
     try {
         const wResult = await pool.query("SELECT * FROM withdrawals WHERE id = $1", [id]);

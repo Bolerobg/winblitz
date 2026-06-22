@@ -101,6 +101,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Migration queries (ensure compatibility with pre-existing tables)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_spin_date VARCHAR(50);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS clan_id INTEGER;
+ALTER TABLE wallet_history ADD COLUMN IF NOT EXISTS stripe_payment_intent_id VARCHAR(100) UNIQUE;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS product_url TEXT;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS product_type VARCHAR(50);
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS image TEXT;

@@ -1,6 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
 
 const AppContext = createContext();
 
@@ -13,6 +12,7 @@ const DEFAULT_QUESTS = [
 ];
 
 const INITIAL_STATE = {
+  authToken: null,
   balance: 100.00,
   role: "user",
   lobbies: [],
@@ -52,7 +52,7 @@ const INITIAL_STATE = {
 export function AppProvider({ children }) {
   const [state, setState] = useState(INITIAL_STATE);
   const [loading, setLoading] = useState(true);
-  const [adminPassword, setAdminPassword] = useState(null);
+  const [adminToken, setAdminToken] = useState(null);
 
   // Helper to map PostgreSQL snake_case properties to camelCase
   function mapLobbyToClient(lobby) {
@@ -97,7 +97,9 @@ export function AppProvider({ children }) {
 
         if (loadedState.user && (loadedState.user.email || loadedState.user.phone)) {
           const authHeaders = {};
-          if (loadedState.user.email) {
+          if (loadedState.authToken) {
+            authHeaders.Authorization = `Bearer ${loadedState.authToken}`;
+          } else if (loadedState.user.email) {
             authHeaders['X-User-Email'] = loadedState.user.email;
           } else {
             authHeaders['X-User-Phone'] = loadedState.user.phone;
@@ -184,13 +186,15 @@ export function AppProvider({ children }) {
   // Wrapper for API fetch requests
   const apiFetch = async (endpoint, options = {}) => {
     if (!options.headers) options.headers = {};
-    if (state.user && state.user.email) {
+    if (state.authToken) {
+      options.headers.Authorization = `Bearer ${state.authToken}`;
+    } else if (state.user && state.user.email) {
       options.headers['X-User-Email'] = state.user.email;
     } else if (state.user && state.user.phone) {
       options.headers['X-User-Phone'] = state.user.phone;
     }
-    if (adminPassword) {
-      options.headers['X-Admin-Password'] = adminPassword;
+    if (adminToken) {
+      options.headers['X-Admin-Token'] = adminToken;
     }
     if (options.body && !options.headers['Content-Type']) {
       options.headers['Content-Type'] = 'application/json';
@@ -209,6 +213,7 @@ export function AppProvider({ children }) {
         const data = await res.json();
         updateState(prev => ({
           ...prev,
+          authToken: data.authToken || prev.authToken,
           showTutorial: true,
           user: {
             ...prev.user,
@@ -220,7 +225,7 @@ export function AppProvider({ children }) {
             promo_code: data.user.promo_code
           }
         }));
-        triggerSync(data.user.email || data.user.phone);
+        triggerSync(data.authToken || undefined);
         return { success: true };
       } else {
         const err = await res.json();
@@ -242,6 +247,7 @@ export function AppProvider({ children }) {
         const data = await res.json();
         updateState(prev => ({
           ...prev,
+          authToken: data.authToken || prev.authToken,
           showTutorial: false,
           user: {
             ...prev.user,
@@ -254,7 +260,7 @@ export function AppProvider({ children }) {
             promo_code: data.user.promo_code
           }
         }));
-        triggerSync(data.user.email || data.user.phone);
+        triggerSync(data.authToken || undefined);
         return { success: true };
       } else {
         const err = await res.json();
@@ -301,10 +307,12 @@ export function AppProvider({ children }) {
     }
   };
 
-  const triggerSync = async (email = state.user.email) => {
-    if (!email) return;
+  const triggerSync = async (authTokenOverride = state.authToken) => {
+    if (!authTokenOverride && !state.user?.email) return;
     try {
-      const authHeaders = { 'X-User-Email': email };
+      const authHeaders = authTokenOverride
+        ? { Authorization: `Bearer ${authTokenOverride}` }
+        : { 'X-User-Email': state.user.email };
       const userRes = await fetch(`${BACKEND_URL}/api/user/state`, {
         headers: authHeaders
       });
@@ -431,7 +439,27 @@ export function AppProvider({ children }) {
   };
 
   const logout = async () => {
+    setAdminToken(null);
     updateState(INITIAL_STATE);
+  };
+
+  const adminLogin = async (password) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json();
+      if (res.ok && data.adminToken) {
+        setAdminToken(data.adminToken);
+        updateState({ role: 'admin' });
+        return { success: true };
+      }
+      return { success: false, error: data.error };
+    } catch (err) {
+      return { success: false, error: "Грешка при връзка със сървъра" };
+    }
   };
 
   const createPaymentIntent = async (amount) => {
@@ -447,11 +475,11 @@ export function AppProvider({ children }) {
     }
   };
 
-  const confirmDeposit = async (amount) => {
+  const confirmDeposit = async (amount, paymentIntentId) => {
     try {
       const res = await apiFetch('/api/payment/confirm-deposit', {
         method: 'POST',
-        body: JSON.stringify({ amount })
+        body: JSON.stringify({ amount, paymentIntentId })
       });
       if (res.ok) {
         triggerSync();
@@ -484,8 +512,9 @@ export function AppProvider({ children }) {
     <AppContext.Provider value={{
       state,
       loading,
-      adminPassword,
-      setAdminPassword,
+      adminToken,
+      setAdminToken,
+      adminLogin,
       updateState,
       apiFetch,
       loginPassword,

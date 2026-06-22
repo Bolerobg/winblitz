@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, SafeAreaView, View, ActivityIndicator, StatusBar, Platform } from 'react-native';
+import { StyleSheet, View, ActivityIndicator, StatusBar } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { AppProvider, useApp } from './context/AppContext';
 import { StripeProvider } from '@stripe/stripe-react-native';
 
@@ -22,6 +23,8 @@ import LootboxModal from './components/LootboxModal';
 import AdminAuthModal from './components/AdminAuthModal';
 import FriendDuelModal from './components/FriendDuelModal';
 import OnboardingModal from './components/OnboardingModal';
+
+const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
 
 function AppNavigator() {
   const { loading, state, updateState } = useApp();
@@ -162,15 +165,17 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <StripeProvider 
-      publishableKey="pk_test_51P8e83J3J2WWqOA7GU79gD3JNqJmsZYjp96ifElKXeSwVhoCme3GcgcgbBxQppXbaCcydIBtSpjeVsm3ikAewyH1003Zz8ojZm"
-      merchantIdentifier="merchant.com.tombola"
-      urlScheme="tombola"
+    <SafeAreaProvider>
+      <StripeProvider 
+        publishableKey={STRIPE_PUBLISHABLE_KEY}
+        merchantIdentifier="merchant.com.tombola"
+        urlScheme="tombola"
     >
-      <AppProvider>
-        <AppNavigator />
-      </AppProvider>
-    </StripeProvider>
+        <AppProvider>
+          <AppNavigator />
+        </AppProvider>
+      </StripeProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -178,7 +183,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0a051b',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
   loadingContainer: {
     flex: 1,
