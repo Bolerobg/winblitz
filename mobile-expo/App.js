@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, SafeAreaView, View, ActivityIndicator, StatusBar, Platform } from 'react-native';
 import { AppProvider, useApp } from './context/AppContext';
 import { StripeProvider } from '@stripe/stripe-react-native';
@@ -34,6 +34,20 @@ function AppNavigator() {
   const [lootboxVisible, setLootboxVisible] = useState(false);
   const [adminAuthVisible, setAdminAuthVisible] = useState(false);
   const [friendDuelVisible, setFriendDuelVisible] = useState(false);
+
+  // Auto-open Lucky Wheel once per day
+  useEffect(() => {
+    if (!loading && state.user && state.user.verified) {
+      const today = new Date().toDateString();
+      if (state.lastSpinDate !== today) {
+        // Wait a short moment after rendering the app before popping it up
+        const timer = setTimeout(() => {
+          setLuckyWheelVisible(true);
+        }, 1200);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [loading, state.user, state.lastSpinDate]);
 
   // Custom simple navigation routing
   const navigation = {
