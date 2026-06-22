@@ -252,7 +252,6 @@ export function AppProvider({ children }) {
             city: data.user.city,
             address: data.user.address,
             promo_code: data.user.promo_code
-            address: data.user.address
           }
         }));
         triggerSync(data.user.email || data.user.phone);
