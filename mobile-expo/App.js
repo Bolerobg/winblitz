@@ -24,7 +24,7 @@ import AdminAuthModal from './components/AdminAuthModal';
 import FriendDuelModal from './components/FriendDuelModal';
 import OnboardingModal from './components/OnboardingModal';
 
-const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || process.env.STRIPE_PUBLISHABLE_KEY || '';
 
 function AppNavigator() {
   const { loading, state, updateState } = useApp();
