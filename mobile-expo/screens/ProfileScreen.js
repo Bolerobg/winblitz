@@ -340,6 +340,17 @@ export default function ProfileScreen({ onOpenLootbox }) {
           {state.user.email ? state.user.email : "Няма имейл"}
         </Text>
 
+        {/* Streak indicator */}
+        <View style={styles.streakBadge}>
+          <Text style={styles.streakEmoji}>🔥</Text>
+          <Text style={styles.streakText}>
+            Серия: {state.user.streak_count || 0} дена
+          </Text>
+        </View>
+        <Text style={styles.streakHint}>
+          На ден 7 печелиш €2.00! Играй турнир всеки ден, за да не загубиш серията си.
+        </Text>
+
         {/* XP Level bar */}
         <View style={styles.xpWrapper}>
           <View style={styles.xpLabelRow}>
@@ -665,9 +676,36 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   userPhone: {
+    color: '#a1a1aa',
+    fontSize: 12,
+    marginBottom: 15,
+  },
+  streakBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginBottom: 6,
+  },
+  streakEmoji: {
+    fontSize: 14,
+    marginRight: 6,
+  },
+  streakText: {
+    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  streakHint: {
     color: '#71717a',
-    fontSize: 11,
-    marginTop: 4,
+    fontSize: 9,
+    textAlign: 'center',
+    marginBottom: 20,
+    width: '80%',
   },
   xpWrapper: {
     width: '100%',

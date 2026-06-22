@@ -21,7 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
     last_spin_date VARCHAR(50),
     promo_code VARCHAR(20) UNIQUE,
     referred_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    referral_bonus_paid BOOLEAN DEFAULT FALSE
+    referral_bonus_paid BOOLEAN DEFAULT FALSE,
+    last_played_date VARCHAR(50),
+    streak_count INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS wallet_history (
@@ -133,5 +135,11 @@ BEGIN
     END IF;
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='referral_bonus_paid') THEN
         ALTER TABLE users ADD COLUMN referral_bonus_paid BOOLEAN DEFAULT FALSE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='last_played_date') THEN
+        ALTER TABLE users ADD COLUMN last_played_date VARCHAR(50);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='streak_count') THEN
+        ALTER TABLE users ADD COLUMN streak_count INTEGER DEFAULT 0;
     END IF;
 END $$;

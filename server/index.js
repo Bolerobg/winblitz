@@ -991,11 +991,42 @@ app.post('/api/lobbies/finish', async (req, res) => {
                 );
             }
             
+            // ---------------- STREAK LOGIC ---------------- //
+            let currentStreak = parseInt(userState.streak_count) || 0;
+            let lastPlayed = userState.last_played_date;
+            
+            if (!isPracticeGame && me) {
+                const todayStr = new Date().toDateString();
+                if (lastPlayed !== todayStr) {
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    const yesterdayStr = yesterday.toDateString();
+                    
+                    if (lastPlayed === yesterdayStr) {
+                        currentStreak += 1;
+                    } else {
+                        currentStreak = 1; // reset streak
+                    }
+                    
+                    lastPlayed = todayStr;
+                    
+                    // Streak reward every 7 days
+                    if (currentStreak > 0 && currentStreak % 7 === 0) {
+                        newBalance += 2.00;
+                        await pool.query(
+                            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                            [userState.id, `🔥 ${currentStreak}-дневен Streak Бонус`, 2.00, "deposit"]
+                        );
+                    }
+                }
+            }
+            // ---------------------------------------------- //
+
             // Update User DB
             const userUpdated = await pool.query(
-                `UPDATE users SET balance = $1, xp = $2, unlocked_achievements = $3, daily_quests = $4 
-                 WHERE id = $5 RETURNING *`,
-                [newBalance, newXP, achievements, JSON.stringify(quests), userState.id]
+                `UPDATE users SET balance = $1, xp = $2, unlocked_achievements = $3, daily_quests = $4, last_played_date = $5, streak_count = $6 
+                 WHERE id = $7 RETURNING *`,
+                [newBalance, newXP, achievements, JSON.stringify(quests), lastPlayed, currentStreak, userState.id]
             );
             userState = userUpdated.rows[0];
         }
