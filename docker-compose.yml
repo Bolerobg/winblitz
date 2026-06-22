@@ -23,7 +23,7 @@ services:
     depends_on:
       - db
     ports:
-      - "3005:3005"
+      - "3080:3005"
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/winblitz?sslmode=disable
       - PORT=3005
