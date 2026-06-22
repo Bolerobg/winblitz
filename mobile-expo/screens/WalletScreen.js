@@ -1,69 +1,113 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
+import { useStripe } from '@stripe/stripe-react-native';
 
 export default function WalletScreen() {
-  const { state, updateState, apiFetch, triggerSync } = useApp();
-  const [fundingAmount, setFundingAmount] = useState('');
+  const { state, updateState, apiFetch, triggerSync, createPaymentIntent, confirmDeposit, requestWithdrawal } = useApp();
+  const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const [loading, setLoading] = useState(false);
+  
+  // Withdraw state
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [iban, setIban] = useState('');
+  const [withdrawals, setWithdrawals] = useState([]);
 
-  const handleAddDemoFunds = async (amount) => {
-    setLoading(true);
-    try {
-      const response = await apiFetch('/api/user/add-funds', {
-        method: 'POST',
-        body: JSON.stringify({ amount })
-      });
+  // Fetch withdrawals history
+  useEffect(() => {
+    const fetchWithdrawals = async () => {
+      try {
+        const res = await apiFetch('/api/user/withdrawals');
+        if (res.ok) {
+          const data = await res.json();
+          setWithdrawals(data.withdrawals || []);
+        }
+      } catch (err) {}
+    };
+    fetchWithdrawals();
+  }, [state.balance]);
 
-      if (response.ok) {
-        const data = await response.json();
-        updateState({ balance: parseFloat(data.balance) });
-        triggerSync();
-        Alert.alert("Успех", `Добавени са €${amount.toFixed(2)} към баланса Ви!`);
-      } else {
-        // Fallback if the endpoint does not exist on the VPS yet
-        // Update local state, warn user that online sync might overwrite it, 
-        // and suggest profile reset if they need a permanent sync.
-        updateState(prev => {
-          const newBalance = prev.balance + amount;
-          const newHistory = [
-            {
-              id: Date.now(),
-              desc: "Демо захранване (Локално)",
-              amount: amount,
-              type: "deposit",
-              date: "Днес"
-            },
-            ...prev.walletHistory
-          ];
-          return { ...prev, balance: newBalance, walletHistory: newHistory };
-        });
-        Alert.alert(
-          "Демо баланс", 
-          `Добавени са €${amount.toFixed(2)} локално. В онлайн режим балансът се синхронизира със сървъра. Ако имате нужда от нулиране, използвайте бутона в 'Профил'.`
-        );
-      }
-    } catch (e) {
-      // Offline mode
-      updateState(prev => {
-        const newBalance = prev.balance + amount;
-        const newHistory = [
-          {
-            id: Date.now(),
-            desc: "Демо захранване (Офлайн)",
-            amount: amount,
-            type: "deposit",
-            date: "Днес"
-          },
-          ...prev.walletHistory
-        ];
-        return { ...prev, balance: newBalance, walletHistory: newHistory };
-      });
-      Alert.alert("Офлайн захранване", `Добавени са €${amount.toFixed(2)} към Вашия офлайн портфейл.`);
-    } finally {
-      setLoading(false);
+  const handleStripeDeposit = async (amount) => {
+    if (!state.user.verified) {
+      Alert.alert("Верификация", "Моля, първо верифицирайте профила си от меню 'Профил'!");
+      return;
     }
+    setLoading(true);
+    const { success, data } = await createPaymentIntent(amount);
+    
+    if (!success || !data.clientSecret) {
+      Alert.alert("Грешка", "Неуспешно свързване със Stripe.");
+      setLoading(false);
+      return;
+    }
+
+    const initRes = await initPaymentSheet({
+      merchantDisplayName: 'WinBlitz',
+      paymentIntentClientSecret: data.clientSecret,
+    });
+
+    if (initRes.error) {
+      Alert.alert("Грешка", initRes.error.message);
+      setLoading(false);
+      return;
+    }
+
+    const paymentRes = await presentPaymentSheet();
+
+    if (paymentRes.error) {
+      Alert.alert("Отказано", "Плащането беше отказано или прекъснато.");
+      setLoading(false);
+      return;
+    }
+
+    const confirmRes = await confirmDeposit(amount);
+    if (confirmRes.success) {
+      Alert.alert("Успех", `Успешно депозирахте €${amount.toFixed(2)}!`);
+    } else {
+      Alert.alert("Грешка", "Плащането мина, но възникна грешка при запазването.");
+    }
+    setLoading(false);
+  };
+
+  const handleWithdraw = async () => {
+    const amountNum = parseFloat(withdrawAmount);
+    if (!amountNum || amountNum < 20) {
+      Alert.alert("Грешка", "Минималната сума за теглене е €20.00");
+      return;
+    }
+    if (amountNum > state.balance) {
+      Alert.alert("Грешка", "Нямате достатъчно наличен баланс.");
+      return;
+    }
+    if (!iban || iban.length < 10) {
+      Alert.alert("Грешка", "Въведете валиден IBAN.");
+      return;
+    }
+
+    setLoading(true);
+    const res = await requestWithdrawal(amountNum, iban);
+    setLoading(false);
+
+    if (res.success) {
+      Alert.alert("Заявката е изпратена", "Тегленето ще бъде обработено от администратор скоро.");
+      setWithdrawAmount('');
+      setIban('');
+    } else {
+      Alert.alert("Грешка", res.error || "Възникна грешка при тегленето.");
+    }
+  };
+
+  const getStatusColor = (status) => {
+    if (status === 'approved') return '#10b981';
+    if (status === 'rejected') return '#ef4444';
+    return '#f59e0b';
+  };
+  
+  const getStatusLabel = (status) => {
+    if (status === 'approved') return 'ОДОБРЕНА';
+    if (status === 'rejected') return 'ОТХВЪРЛЕНА';
+    return 'ЧАКАЩА';
   };
 
   return (
@@ -86,30 +130,30 @@ export default function WalletScreen() {
         </View>
       </View>
 
-      {/* Demo Funding Section */}
-      <Text style={styles.sectionHeader}>🪙 Безплатно демо захранване</Text>
+      {/* Stripe Deposit */}
+      <Text style={styles.sectionHeader}>💳 Депозит (Stripe Test)</Text>
       <View style={styles.fundingCard}>
         <Text style={styles.fundingDesc}>
-          Тъй като това е демонстрационна версия, можете да добавите безплатни демо средства за тестване на турнирите.
+          Използвайте тестова карта (напр. 4242 4242...) за да захраните акаунта си сигурно чрез Stripe.
         </Text>
         <View style={styles.btnGrid}>
           <TouchableOpacity 
             style={styles.fundBtn} 
-            onPress={() => handleAddDemoFunds(10)}
+            onPress={() => handleStripeDeposit(10)}
             disabled={loading}
           >
             <Text style={styles.fundBtnText}>+ €10</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.fundBtn} 
-            onPress={() => handleAddDemoFunds(20)}
+            onPress={() => handleStripeDeposit(20)}
             disabled={loading}
           >
             <Text style={styles.fundBtnText}>+ €20</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={styles.fundBtn} 
-            onPress={() => handleAddDemoFunds(50)}
+            onPress={() => handleStripeDeposit(50)}
             disabled={loading}
           >
             <Text style={styles.fundBtnText}>+ €50</Text>
@@ -117,28 +161,70 @@ export default function WalletScreen() {
         </View>
       </View>
 
-      {/* Legal Info Card */}
-      <View style={styles.legalCard}>
-        <View style={styles.legalHeader}>
-          <Ionicons name="information-circle-outline" size={18} color="#a855f7" />
-          <Text style={styles.legalTitle}>Правна Информация (Чл. 11 & Чл. 36)</Text>
-        </View>
-        <Text style={styles.legalText}>
-          Всички турнири в WinBlitz се основават изцяло на бързина и интелектуални умения. Резултатът зависи напълно от Вашите действия, а не от случайност (жребий/томбола).
-        </Text>
-        <Text style={styles.legalText}>
-          Когато участвате, Вие купувате дигитален арт тапет на пазарна стойност от €5. Талонът за състезанието е безплатен подарък (промоция). Този модел е напълно легален и извън Закона за хазарта.
-        </Text>
+      {/* Withdrawal Form */}
+      <Text style={styles.sectionHeader}>🏦 Изтегли Печалба</Text>
+      <View style={styles.withdrawCard}>
+        <Text style={styles.withdrawDesc}>Минимална сума за теглене: €20.00. Всяка транзакция се одобрява ръчно от екипа ни.</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Сума (напр. 25.00)"
+          placeholderTextColor="#52525b"
+          keyboardType="numeric"
+          value={withdrawAmount}
+          onChangeText={setWithdrawAmount}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Вашият IBAN"
+          placeholderTextColor="#52525b"
+          autoCapitalize="characters"
+          value={iban}
+          onChangeText={setIban}
+        />
+        <TouchableOpacity 
+          style={styles.withdrawBtn}
+          onPress={handleWithdraw}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.withdrawBtnText}>Заяви Теглене</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
-      {/* Transaction History */}
+      {/* Withdrawal History */}
+      {withdrawals.length > 0 && (
+        <>
+          <Text style={styles.sectionHeader}>⏳ Заявки за теглене</Text>
+          {withdrawals.map((w, idx) => (
+            <View key={w.id || idx} style={styles.transactionItem}>
+              <View style={styles.txInfo}>
+                <Text style={styles.txDesc}>Теглене към IBAN</Text>
+                <Text style={styles.txDate}>{new Date(w.created_at).toLocaleString('bg-BG')}</Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={[styles.txAmount, styles.txWithdrawal]}>
+                  - €{parseFloat(w.amount).toFixed(2)}
+                </Text>
+                <Text style={[styles.wStatusText, { color: getStatusColor(w.status) }]}>
+                  {getStatusLabel(w.status)}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
+      {/* General History */}
       <Text style={styles.sectionHeader}>📈 История на транзакциите</Text>
       {state.walletHistory.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>Няма регистрирани транзакции.</Text>
         </View>
       ) : (
-        state.walletHistory.map((item, idx) => {
+        state.walletHistory.slice(0, 10).map((item, idx) => {
           const isDeposit = item.type === 'deposit';
           return (
             <View key={item.id || idx} style={styles.transactionItem}>
@@ -252,31 +338,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  legalCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.01)',
+  withdrawCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.04)',
+    borderColor: 'rgba(255, 255, 255, 0.05)',
     padding: 15,
-    marginBottom: 20,
+    marginBottom: 15,
   },
-  legalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  withdrawDesc: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 15,
+  },
+  input: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 10,
+    color: '#fff',
+    paddingHorizontal: 15,
+    height: 45,
     marginBottom: 10,
   },
-  legalTitle: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '850',
-    textTransform: 'uppercase',
+  withdrawBtn: {
+    backgroundColor: '#10b981',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 5,
   },
-  legalText: {
-    color: '#71717a',
-    fontSize: 10,
-    lineHeight: 14,
-    marginBottom: 8,
+  withdrawBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   emptyCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.02)',
@@ -321,5 +417,10 @@ const styles = StyleSheet.create({
   },
   txWithdrawal: {
     color: '#ef4444',
+  },
+  wStatusText: {
+    fontSize: 9,
+    fontWeight: '800',
+    marginTop: 2,
   }
 });

@@ -7,6 +7,8 @@ const path = require('path');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
 
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || 'sk_test_123');
+
 const app = express();
 const PORT = process.env.PORT || 3005;
 
@@ -1147,6 +1149,157 @@ app.post('/api/admin/reset-all', requireAdmin, async (req, res) => {
         res.status(500).json({ error: err.message || "Server error" });
     }
 });
+
+// ---------------- STRIPE & PAYMENTS ----------------
+app.post('/api/payment/create-intent', async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Неоторизиран достъп" });
+    const { amount } = req.body;
+    if (!amount || amount < 5) return res.status(400).json({ error: "Минималната сума за депозит е €5.00" });
+
+    try {
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: Math.round(amount * 100),
+            currency: 'eur',
+            automatic_payment_methods: {
+                enabled: true,
+            },
+        });
+        res.json({ clientSecret: paymentIntent.client_secret });
+    } catch (err) {
+        console.error("Stripe create intent error:", err);
+        res.status(500).json({ error: "Грешка при комуникация със Stripe." });
+    }
+});
+
+app.post('/api/payment/confirm-deposit', async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Неоторизиран достъп" });
+    const { amount } = req.body;
+    
+    try {
+        await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.user.id]);
+        await pool.query(
+            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+            [req.user.id, `Депозит чрез Stripe`, amount, "deposit"]
+        );
+        
+        const updatedUser = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+        res.json({ success: true, user: updatedUser.rows[0] });
+    } catch (err) {
+        console.error("Confirm deposit error:", err);
+        res.status(500).json({ error: "Грешка при запазване на депозита." });
+    }
+});
+
+app.post('/api/payment/withdraw', async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Неоторизиран достъп" });
+    const { amount, iban } = req.body;
+    
+    if (!amount || amount < 20) return res.status(400).json({ error: "Минималната сума за теглене е €20.00" });
+    if (!iban || iban.trim().length < 10) return res.status(400).json({ error: "Моля, въведете валиден IBAN." });
+
+    if (parseFloat(req.user.balance) < parseFloat(amount)) {
+        return res.status(400).json({ error: "Нямате достатъчно средства за това теглене." });
+    }
+
+    try {
+        // Subtract from balance immediately
+        await pool.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, req.user.id]);
+        
+        // Insert withdrawal request
+        await pool.query(
+            'INSERT INTO withdrawals (user_id, amount, status, iban) VALUES ($1, $2, $3, $4)',
+            [req.user.id, amount, 'pending', iban]
+        );
+        
+        // Insert wallet history
+        await pool.query(
+            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+            [req.user.id, `Заявка за теглене към IBAN`, -amount, "withdrawal"]
+        );
+
+        const updatedUser = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+        res.json({ success: true, user: updatedUser.rows[0] });
+    } catch (err) {
+        console.error("Withdrawal error:", err);
+        res.status(500).json({ error: "Възникна грешка при обработка на заявката." });
+    }
+});
+
+app.get('/api/user/withdrawals', async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Неоторизиран достъп" });
+
+    try {
+        const result = await pool.query('SELECT * FROM withdrawals WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
+        res.json({ success: true, withdrawals: result.rows });
+    } catch (err) {
+        console.error("Fetch user withdrawals error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+app.get('/api/admin/withdrawals', async (req, res) => {
+    const adminPassword = req.headers['x-admin-password'];
+    if (adminPassword !== 'admin1234') {
+        return res.status(403).json({ error: "Грешна парола!" });
+    }
+
+    try {
+        const result = await pool.query(`
+            SELECT w.*, u.fullname, u.email, u.phone 
+            FROM withdrawals w 
+            JOIN users u ON w.user_id = u.id 
+            ORDER BY w.created_at DESC
+        `);
+        res.json({ success: true, withdrawals: result.rows });
+    } catch (err) {
+        console.error("Fetch withdrawals error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+app.post('/api/admin/withdrawal/approve', async (req, res) => {
+    const adminPassword = req.headers['x-admin-password'];
+    if (adminPassword !== 'admin1234') {
+        return res.status(403).json({ error: "Грешна парола!" });
+    }
+
+    const { id } = req.body;
+    try {
+        await pool.query("UPDATE withdrawals SET status = 'approved' WHERE id = $1", [id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+app.post('/api/admin/withdrawal/reject', async (req, res) => {
+    const adminPassword = req.headers['x-admin-password'];
+    if (adminPassword !== 'admin1234') {
+        return res.status(403).json({ error: "Грешна парола!" });
+    }
+
+    const { id } = req.body;
+    try {
+        const wResult = await pool.query("SELECT * FROM withdrawals WHERE id = $1", [id]);
+        if (wResult.rows.length === 0) return res.status(404).json({ error: "Not found" });
+        
+        const w = wResult.rows[0];
+        if (w.status !== 'pending') return res.status(400).json({ error: "Already processed" });
+
+        // Reject and refund balance
+        await pool.query("UPDATE withdrawals SET status = 'rejected' WHERE id = $1", [id]);
+        await pool.query("UPDATE users SET balance = balance + $1 WHERE id = $2", [w.amount, w.user_id]);
+        await pool.query(
+            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+            [w.user_id, `Отхвърлено теглене (Възстановени средства)`, w.amount, "deposit"]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: "Server error" });
+    }
+});
+// ---------------------------------------------------
 
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, '..')));

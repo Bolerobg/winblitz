@@ -431,6 +431,52 @@ export function AppProvider({ children }) {
     updateState(INITIAL_STATE);
   };
 
+  const createPaymentIntent = async (amount) => {
+    try {
+      const res = await apiFetch('/api/payment/create-intent', {
+        method: 'POST',
+        body: JSON.stringify({ amount })
+      });
+      const data = await res.json();
+      return { success: res.ok, data: data };
+    } catch (err) {
+      return { success: false, data: { error: 'Network error' } };
+    }
+  };
+
+  const confirmDeposit = async (amount) => {
+    try {
+      const res = await apiFetch('/api/payment/confirm-deposit', {
+        method: 'POST',
+        body: JSON.stringify({ amount })
+      });
+      if (res.ok) {
+        triggerSync();
+        return { success: true };
+      }
+      return { success: false };
+    } catch (err) {
+      return { success: false };
+    }
+  };
+
+  const requestWithdrawal = async (amount, iban) => {
+    try {
+      const res = await apiFetch('/api/payment/withdraw', {
+        method: 'POST',
+        body: JSON.stringify({ amount, iban })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        triggerSync();
+        return { success: true };
+      }
+      return { success: false, error: data.error };
+    } catch (err) {
+      return { success: false, error: 'Network error' };
+    }
+  };
+
   return (
     <AppContext.Provider value={{
       state,
@@ -448,6 +494,9 @@ export function AppProvider({ children }) {
       triggerSync,
       mapLobbyToClient,
       logout,
+      createPaymentIntent,
+      confirmDeposit,
+      requestWithdrawal,
       BACKEND_URL
     }}>
       {children}

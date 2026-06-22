@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function AdminScreen({ navigation }) {
-  const { state, updateState, apiFetch, triggerSync } = useApp();
+  const { state, updateState, apiFetch, triggerSync, adminPassword } = useApp();
   const [loading, setLoading] = useState(false);
 
   // Form states for creating lobby
@@ -12,10 +12,29 @@ export default function AdminScreen({ navigation }) {
   const [prizeValue, setPrizeValue] = useState('');
   const [ticketPrice, setTicketPrice] = useState('');
   const [maxPlayers, setMaxPlayers] = useState('5');
-  const [productType, setProductType] = useState('voucher'); // voucher, wallpaper, guide
-  const [gameType, setGameType] = useState('math'); // math, memory, reflex, scramble, numbers
+  const [productType, setProductType] = useState('voucher'); 
+  const [gameType, setGameType] = useState('math'); 
   const [productUrl, setProductUrl] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+
+  // Withdrawals
+  const [withdrawals, setWithdrawals] = useState([]);
+
+  const fetchWithdrawals = async () => {
+    try {
+      const res = await apiFetch('/api/admin/withdrawals', {
+        headers: { 'x-admin-password': adminPassword }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWithdrawals(data.withdrawals || []);
+      }
+    } catch (err) {}
+  };
+
+  useEffect(() => {
+    fetchWithdrawals();
+  }, [state.balance]);
 
   // Calculate statistics from completed games
   const nonPracticeGames = (state.completedTournaments || []).filter(g => !g.isPractice);
@@ -163,8 +182,31 @@ export default function AdminScreen({ navigation }) {
     );
   };
 
+  const handleProcessWithdrawal = async (id, action) => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/admin/withdrawal/${action}`, {
+        method: 'POST',
+        headers: { 'x-admin-password': adminPassword },
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        Alert.alert("Успех", "Заявката е обработена.");
+        fetchWithdrawals();
+      } else {
+        const err = await res.json();
+        Alert.alert("Грешка", err.error || "Неуспешно обработване.");
+      }
+    } catch (e) {
+      Alert.alert("Грешка", "Сървърна грешка.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Find all pending order deliveries
   const pendingOrders = nonPracticeGames.filter(g => g.deliveryStatus === 'pending' || !g.deliveryStatus);
+  const pendingWithdrawals = withdrawals.filter(w => w.status === 'pending');
 
   return (
     <KeyboardAvoidingView 
@@ -190,6 +232,49 @@ export default function AdminScreen({ navigation }) {
           <Text style={[styles.statValue, { color: '#10b981' }]}>€{totalMargin.toFixed(2)}</Text>
         </View>
       </View>
+
+      {/* Withdrawals */}
+      <Text style={styles.sectionHeader}>💳 ЧАКАЩИ ТЕГЛЕНИЯ ({pendingWithdrawals.length})</Text>
+      {pendingWithdrawals.length === 0 ? (
+        <View style={styles.emptyCard}>
+          <Text style={styles.emptyText}>Няма чакащи тегления.</Text>
+        </View>
+      ) : (
+        pendingWithdrawals.map(w => (
+          <View key={w.id} style={styles.orderCard}>
+            <View style={styles.orderHeader}>
+              <Text style={styles.orderTitle}>€{parseFloat(w.amount).toFixed(2)} ({w.fullname})</Text>
+              <View style={styles.pendingBadge}>
+                <Text style={styles.pendingBadgeText}>Чака одобрение</Text>
+              </View>
+            </View>
+            <View style={styles.orderMeta}>
+              <Text style={styles.metaText}><Text style={styles.boldText}>IBAN: </Text>{w.iban}</Text>
+              <Text style={styles.metaText}><Text style={styles.boldText}>Имейл: </Text>{w.email}</Text>
+              {w.phone && <Text style={styles.metaText}><Text style={styles.boldText}>Телефон: </Text>{w.phone}</Text>}
+              <Text style={styles.metaText}><Text style={styles.boldText}>Заявено: </Text>{new Date(w.created_at).toLocaleString('bg-BG')}</Text>
+            </View>
+            <View style={[styles.orderActions, { gap: 10 }]}>
+              <TouchableOpacity 
+                style={[styles.shipBtn, { flex: 1, justifyContent: 'center' }]} 
+                onPress={() => handleProcessWithdrawal(w.id, 'approve')}
+                disabled={loading}
+              >
+                <Ionicons name="checkmark" size={14} color="#fff" style={{ marginRight: 5 }} />
+                <Text style={styles.shipBtnText}>ОДОБРИ ПЛАЩАНЕ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.shipBtn, { flex: 1, justifyContent: 'center', backgroundColor: '#ef4444' }]} 
+                onPress={() => handleProcessWithdrawal(w.id, 'reject')}
+                disabled={loading}
+              >
+                <Ionicons name="close" size={14} color="#fff" style={{ marginRight: 5 }} />
+                <Text style={styles.shipBtnText}>ОТКАЖИ</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ))
+      )}
 
       {/* Form: Create Lobby */}
       <Text style={styles.sectionHeader}>➕ СЪЗДАЙ ТУРНИР ЗА НАГРАДА</Text>

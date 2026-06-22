@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StyleSheet, SafeAreaView, View, ActivityIndicator, StatusBar, Platform } from 'react-native';
 import { AppProvider, useApp } from './context/AppContext';
+import { StripeProvider } from '@stripe/stripe-react-native';
 
 // Screens
 import LobbiesScreen from './screens/LobbiesScreen';
@@ -147,9 +148,15 @@ function AppNavigator() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppNavigator />
-    </AppProvider>
+    <StripeProvider 
+      publishableKey="pk_test_51P8e83J3J2WWqOA7GU79gD3JNqJmsZYjp96ifElKXeSwVhoCme3GcgcgbBxQppXbaCcydIBtSpjeVsm3ikAewyH1003Zz8ojZm"
+      merchantIdentifier="merchant.com.tombola"
+      urlScheme="tombola"
+    >
+      <AppProvider>
+        <AppNavigator />
+      </AppProvider>
+    </StripeProvider>
   );
 }
 

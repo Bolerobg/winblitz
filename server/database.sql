@@ -109,3 +109,12 @@ UPDATE users SET unlocked_avatars = ARRAY['👤']::TEXT[] WHERE unlocked_avatars
 UPDATE users SET unlocked_themes = ARRAY['default']::TEXT[] WHERE unlocked_themes IS NULL;
 
 
+
+CREATE TABLE IF NOT EXISTS withdrawals (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    amount NUMERIC(10, 2) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
+    iban VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
