@@ -10,6 +10,10 @@ const getLeagueInfo = (xp) => {
     return { name: "Бронз", badge: "🥉", color: "#d4d4d8", bg: "transparent" };
 };
 
+const getPlayerKey = (player, index) => `player-${player.id || player.fullname || player.name || index}-${index}`;
+const getClanKey = (clan, index) => `clan-${clan.id || clan.name || index}-${index}`;
+const getMemberKey = (member, index) => `member-${member.id || member.fullname || index}-${index}`;
+
 export default function LeagueClanScreen() {
   const { state, updateState, apiFetch, triggerSync } = useApp();
   const [tab, setTab] = useState('league'); // 'league' or 'clan'
@@ -224,7 +228,7 @@ export default function LeagueClanScreen() {
               const league = getLeagueInfo(player.xp);
               return (
                 <View 
-                  key={player.id || player.name} 
+                  key={getPlayerKey(player, index)} 
                   style={[
                     styles.rankItem, 
                     player.isMe && styles.rankItemMe,
@@ -270,10 +274,10 @@ export default function LeagueClanScreen() {
                 
                 {/* Member Roster */}
                 <View style={styles.membersList}>
-                  {(myClan.members || []).map((member) => {
+                  {(myClan.members || []).map((member, index) => {
                     const isMe = member.is_current_user || member.id === state.user?.id;
                     return (
-                      <View key={member.id} style={[styles.memberItem, isMe && styles.memberItemMe]}>
+                      <View key={getMemberKey(member, index)} style={[styles.memberItem, isMe && styles.memberItemMe]}>
                         <Text style={styles.memberAvatar}>{member.active_avatar || "👤"}</Text>
                         <View style={{ flex: 1 }}>
                           <Text style={isMe ? styles.memberNameMe : styles.memberName}>
@@ -301,10 +305,10 @@ export default function LeagueClanScreen() {
               {/* Clans Leaderboard in joined mode */}
               <Text style={styles.sectionHeader}>📈 Класация на клановете</Text>
               <View style={styles.listCard}>
-                {sortedClans.map((c) => {
+                {sortedClans.map((c, index) => {
                   const isMyClan = parseInt(c.id, 10) === parseInt(state.clanId, 10);
                   return (
-                    <View key={c.id} style={[styles.rankItem, isMyClan && styles.rankItemMe]}>
+                    <View key={getClanKey(c, index)} style={[styles.rankItem, isMyClan && styles.rankItemMe]}>
                       <Text style={styles.rankIndex}>{c.icon || "🛡️"}</Text>
                       <Text style={[styles.rankName, isMyClan && styles.rankNameMe]}>
                         {c.name} {isMyClan && "(Моят)"}
@@ -341,10 +345,10 @@ export default function LeagueClanScreen() {
                 </View>
               )}
 
-              {sortedClans.map((c) => {
+              {sortedClans.map((c, index) => {
                 const isFull = (c.member_count || c.members?.length || 0) >= 5;
                 return (
-                  <View key={c.id} style={styles.clanJoinCard}>
+                  <View key={getClanKey(c, index)} style={styles.clanJoinCard}>
                     <View style={styles.clanJoinHeader}>
                       <Text style={styles.clanJoinIcon}>{c.icon || "🛡️"}</Text>
                       <View style={{ flex: 1 }}>
