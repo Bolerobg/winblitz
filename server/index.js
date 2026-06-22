@@ -328,6 +328,62 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
+// POST /api/auth/forgot-password
+app.post('/api/auth/forgot-password', async (req, res) => {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Имейлът е задължителен." });
+
+    try {
+        const emailVal = email.trim().toLowerCase();
+        const result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Няма регистриран потребител с този имейл." });
+        }
+
+        const resetCode = Math.floor(1000 + Math.random() * 9000).toString();
+        
+        await pool.query('UPDATE users SET reset_code = $1 WHERE email = $2', [resetCode, emailVal]);
+        
+        await sendVerificationEmail(emailVal, resetCode);
+        
+        res.json({ success: true, message: "Кодът за възстановяване е изпратен." });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message || "Server error" });
+    }
+});
+
+// POST /api/auth/reset-password
+app.post('/api/auth/reset-password', async (req, res) => {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+        return res.status(400).json({ error: "Имейл, код и нова парола са задължителни." });
+    }
+
+    try {
+        const emailVal = email.trim().toLowerCase();
+        const result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: "Потребителят не е намерен." });
+        }
+
+        const user = result.rows[0];
+        if (user.reset_code !== code) {
+            return res.status(400).json({ error: "Невалиден код." });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash(newPassword, salt);
+
+        await pool.query('UPDATE users SET password_hash = $1, reset_code = NULL WHERE email = $2', [hash, emailVal]);
+
+        res.json({ success: true, message: "Паролата е успешно променена." });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message || "Server error" });
+    }
+});
+
 // POST /api/user/update-address
 app.post('/api/user/update-address', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });

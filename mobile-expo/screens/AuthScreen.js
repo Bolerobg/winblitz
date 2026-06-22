@@ -16,11 +16,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 
 export default function AuthScreen() {
-  const { loginPassword, registerPassword } = useApp();
+  const { loginPassword, registerPassword, forgotPassword, resetPassword } = useApp();
 
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+  const [mode, setMode] = useState('login'); // 'login' | 'register' | 'forgot' | 'reset'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
   
   // Registration form fields
   const [fullname, setFullname] = useState('');
@@ -80,6 +81,47 @@ export default function AuthScreen() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (!email || !validateEmail(email)) {
+      Alert.alert("Грешка", "Моля въведете валиден имейл адрес!");
+      return;
+    }
+
+    setLoading(true);
+    const res = await forgotPassword(email);
+    setLoading(false);
+
+    if (res.success) {
+      setMode('reset');
+    } else {
+      Alert.alert("Грешка", res.error || "Възникна грешка.");
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!code || code.length !== 4) {
+      Alert.alert("Грешка", "Моля въведете валиден 4-цифрен код!");
+      return;
+    }
+    if (!password || password.length < 6) {
+      Alert.alert("Грешка", "Моля въведете нова парола (поне 6 символа)!");
+      return;
+    }
+
+    setLoading(true);
+    const res = await resetPassword(email, code, password);
+    setLoading(false);
+
+    if (res.success) {
+      Alert.alert("Успех", "Паролата е успешно променена!");
+      setMode('login');
+      setPassword('');
+      setCode('');
+    } else {
+      Alert.alert("Грешка", res.error || "Грешка при възстановяване на паролата.");
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
@@ -101,22 +143,24 @@ export default function AuthScreen() {
         {/* Dynamic Card Container */}
         <View style={styles.card}>
           
-          <View style={styles.tabsContainer}>
-            <TouchableOpacity 
-              style={[styles.tab, mode === 'login' && styles.activeTab]} 
-              onPress={() => setMode('login')}
-            >
-              <Text style={[styles.tabText, mode === 'login' && styles.activeTabText]}>Вход</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.tab, mode === 'register' && styles.activeTab]} 
-              onPress={() => setMode('register')}
-            >
-              <Text style={[styles.tabText, mode === 'register' && styles.activeTabText]}>Регистрация</Text>
-            </TouchableOpacity>
-          </View>
+          {(mode === 'login' || mode === 'register') && (
+            <View style={styles.tabsContainer}>
+              <TouchableOpacity 
+                style={[styles.tab, mode === 'login' && styles.activeTab]} 
+                onPress={() => setMode('login')}
+              >
+                <Text style={[styles.tabText, mode === 'login' && styles.activeTabText]}>Вход</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.tab, mode === 'register' && styles.activeTab]} 
+                onPress={() => setMode('register')}
+              >
+                <Text style={[styles.tabText, mode === 'register' && styles.activeTabText]}>Регистрация</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
-          {mode === 'login' ? (
+          {mode === 'login' && (
             <View>
               <Text style={styles.cardDesc}>Въведете вашия имейл и парола, за да влезете.</Text>
               
@@ -150,8 +194,17 @@ export default function AuthScreen() {
                   <Text style={styles.actionBtnText}>Вход</Text>
                 )}
               </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.forgotBtn} 
+                onPress={() => setMode('forgot')}
+              >
+                <Text style={styles.forgotBtnText}>Забравена парола?</Text>
+              </TouchableOpacity>
             </View>
-          ) : (
+          )}
+
+          {mode === 'register' && (
             <View>
               <Text style={styles.cardDesc}>
                 Въведете реалните си данни за получаване на спечелените награди от Спиди/Еконт.
@@ -209,6 +262,88 @@ export default function AuthScreen() {
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
                   <Text style={styles.actionBtnText}>Създай профил</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {mode === 'forgot' && (
+            <View>
+              <View style={styles.cardHeaderRow}>
+                <TouchableOpacity onPress={() => setMode('login')} style={styles.backBtn}>
+                  <Ionicons name="arrow-back" size={20} color="#a1a1aa" />
+                </TouchableOpacity>
+                <Text style={styles.cardTitle}>Забравена парола</Text>
+              </View>
+              <Text style={styles.cardDesc}>
+                Въведете вашия имейл и ние ще ви изпратим 4-цифрен код за възстановяване.
+              </Text>
+
+              <TextInput 
+                style={styles.input}
+                placeholder="Имейл адрес..."
+                placeholderTextColor="#52525b"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={email}
+                onChangeText={setEmail}
+              />
+
+              <TouchableOpacity 
+                style={styles.actionBtn} 
+                onPress={handleForgotPassword}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.actionBtnText}>Изпрати код</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {mode === 'reset' && (
+            <View>
+              <View style={styles.cardHeaderRow}>
+                <TouchableOpacity onPress={() => setMode('forgot')} style={styles.backBtn}>
+                  <Ionicons name="arrow-back" size={20} color="#a1a1aa" />
+                </TouchableOpacity>
+                <Text style={styles.cardTitle}>Нова парола</Text>
+              </View>
+              <Text style={styles.cardDesc}>
+                Въведете кода от имейла и новата си парола.
+              </Text>
+
+              <TextInput 
+                style={[styles.input, styles.codeInput]}
+                placeholder="0 0 0 0"
+                placeholderTextColor="#52525b"
+                keyboardType="number-pad"
+                maxLength={4}
+                value={code}
+                onChangeText={setCode}
+              />
+
+              <TextInput 
+                style={styles.input}
+                placeholder="Нова парола..."
+                placeholderTextColor="#52525b"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+
+              <TouchableOpacity 
+                style={styles.actionBtn} 
+                onPress={handleResetPassword}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.actionBtnText}>Запази паролата</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -338,5 +473,37 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 1,
+  },
+  forgotBtn: {
+    marginTop: 15,
+    alignItems: 'center',
+    padding: 10,
+  },
+  forgotBtnText: {
+    color: '#8b5cf6',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  backBtn: {
+    marginRight: 10,
+    padding: 4,
+  },
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  codeInput: {
+    fontSize: 26,
+    textAlign: 'center',
+    letterSpacing: 10,
+    fontWeight: 'bold',
+    color: '#fbbf24',
+    borderColor: '#fbbf24',
   }
 });

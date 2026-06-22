@@ -95,6 +95,7 @@ ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS delivery_status VARCHAR(20)
 ALTER TABLE users ALTER COLUMN phone DROP NOT NULL;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(100) UNIQUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_code VARCHAR(10);
 
 -- Lobbies and completed_games practice/friend duel migrations
 ALTER TABLE lobbies ADD COLUMN IF NOT EXISTS is_friend_duel BOOLEAN DEFAULT FALSE;

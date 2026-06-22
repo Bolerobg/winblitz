@@ -262,6 +262,42 @@ export function AppProvider({ children }) {
     }
   };
 
+  const forgotPassword = async (email) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      if (res.ok) {
+        return { success: true };
+      } else {
+        const err = await res.json();
+        return { success: false, error: err.error };
+      }
+    } catch (e) {
+      return { success: false, error: "Грешка при връзка със сървъра" };
+    }
+  };
+
+  const resetPassword = async (email, code, newPassword) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code, newPassword })
+      });
+      if (res.ok) {
+        return { success: true };
+      } else {
+        const err = await res.json();
+        return { success: false, error: err.error };
+      }
+    } catch (e) {
+      return { success: false, error: "Грешка при връзка със сървъра" };
+    }
+  };
+
   const triggerSync = async (email = state.user.email) => {
     if (!email) return;
     try {
@@ -405,6 +441,8 @@ export function AppProvider({ children }) {
       apiFetch,
       loginPassword,
       registerPassword,
+      forgotPassword,
+      resetPassword,
       resetApp,
       joinLobby,
       triggerSync,
