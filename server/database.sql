@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS wallet_history (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS clans (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    icon VARCHAR(10) DEFAULT '🛡️',
+    xp INTEGER DEFAULT 0,
+    creator_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS won_prizes (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -91,6 +100,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Migration queries (ensure compatibility with pre-existing tables)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_spin_date VARCHAR(50);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS clan_id INTEGER;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS product_url TEXT;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS product_type VARCHAR(50);
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS image TEXT;
@@ -107,6 +117,14 @@ ALTER TABLE lobbies ADD COLUMN IF NOT EXISTS is_friend_duel BOOLEAN DEFAULT FALS
 ALTER TABLE lobbies ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS is_practice BOOLEAN DEFAULT FALSE;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS is_friend_duel BOOLEAN DEFAULT FALSE;
+
+-- Seed starter clans for new installs
+INSERT INTO clans (name, icon, xp)
+VALUES
+('БГ Нинджи', '🛡️', 12500),
+('Блиц Шампиони', '⚡', 9800),
+('Томбола Мастърс', '🏆', 15400)
+ON CONFLICT (name) DO NOTHING;
 
 -- Normalize existing NULL arrays
 UPDATE users SET unlocked_achievements = ARRAY[]::TEXT[] WHERE unlocked_achievements IS NULL;

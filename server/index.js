@@ -1029,6 +1029,11 @@ app.post('/api/lobbies/finish', async (req, res) => {
                 [newBalance, newXP, achievements, JSON.stringify(quests), lastPlayed, currentStreak, userState.id]
             );
             userState = userUpdated.rows[0];
+            
+            // Add XP to user's clan if they have one
+            if (userState.clan_id && xpGained > 0) {
+                await pool.query('UPDATE clans SET xp = xp + $1 WHERE id = $2', [xpGained, userState.clan_id]);
+            }
         }
         
         // 5. Clean up/Reset active lobby state
@@ -1061,12 +1066,109 @@ app.post('/api/lobbies/finish', async (req, res) => {
     }
 });
 
+// GET /api/clans
+app.get('/api/clans', async (req, res) => {
+    try {
+        const currentUserId = req.user ? req.user.id : null;
+        const result = await pool.query(`
+            SELECT c.*, 
+                   COUNT(u.id)::INTEGER as member_count,
+                   COALESCE(
+                       json_agg(
+                           json_build_object(
+                               'id', u.id,
+                               'fullname', u.fullname,
+                               'active_avatar', u.active_avatar,
+                               'xp', u.xp,
+                               'is_creator', u.id = c.creator_id,
+                               'is_current_user', u.id = $1
+                           )
+                           ORDER BY (u.id = c.creator_id) DESC, u.xp DESC, u.id ASC
+                       ) FILTER (WHERE u.id IS NOT NULL),
+                       '[]'
+                   ) as members
+            FROM clans c
+            LEFT JOIN users u ON u.clan_id = c.id
+            GROUP BY c.id
+            ORDER BY c.xp DESC, c.created_at ASC
+        `, [currentUserId]);
+        res.json({ success: true, clans: result.rows });
+    } catch (err) {
+        console.error("Clans fetch error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+// POST /api/clans/create
+app.post('/api/clans/create', async (req, res) => {
+    if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    const icon = typeof req.body.icon === 'string' && req.body.icon.trim() ? req.body.icon.trim().slice(0, 10) : '🛡️';
+    
+    if (req.user.clan_id) {
+        return res.status(400).json({ error: "Вече сте в клан. Напуснете текущия клан, за да създадете нов." });
+    }
+    if (name.length < 3 || name.length > 40) {
+        return res.status(400).json({ error: "Името на клана трябва да е между 3 и 40 символа." });
+    }
+    
+    if (parseFloat(req.user.balance) < 2.00) {
+        return res.status(400).json({ error: "Недостатъчен баланс (€2.00) за създаване на клан." });
+    }
+
+    try {
+        await pool.query('BEGIN');
+        
+        // Create clan
+        const newClan = await pool.query(
+            'INSERT INTO clans (name, icon, creator_id) VALUES ($1, $2, $3) RETURNING *',
+            [name, icon, req.user.id]
+        );
+        const clanId = newClan.rows[0].id;
+        
+        // Deduct balance and set user clan
+        const newBalance = parseFloat(req.user.balance) - 2.00;
+        const updatedUser = await pool.query(
+            'UPDATE users SET balance = $1, clan_id = $2 WHERE id = $3 RETURNING *',
+            [newBalance, clanId, req.user.id]
+        );
+        
+        // Log transaction
+        await pool.query(
+            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+            [req.user.id, `Създаване на клан (${name})`, -2.00, "withdrawal"]
+        );
+        
+        await pool.query('COMMIT');
+        res.json({ success: true, user: updatedUser.rows[0], clan: newClan.rows[0] });
+    } catch (err) {
+        await pool.query('ROLLBACK');
+        console.error(err);
+        if (err.constraint === 'clans_name_key') {
+            return res.status(400).json({ error: "Това име на клан вече е заето!" });
+        }
+        res.status(500).json({ error: err.message || "Server error" });
+    }
+});
+
 // POST /api/user/join-clan
 app.post('/api/user/join-clan', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const { clanId } = req.body;
+    const parsedClanId = parseInt(clanId, 10);
+    if (!parsedClanId) return res.status(400).json({ error: "Невалиден клан." });
+    if (req.user.clan_id === parsedClanId) return res.status(400).json({ error: "Вече сте в този клан." });
+    
     try {
-        const updated = await pool.query('UPDATE users SET clan_id = $1 WHERE id = $2 RETURNING *', [clanId, req.user.id]);
+        const clanCheck = await pool.query('SELECT * FROM clans WHERE id = $1', [parsedClanId]);
+        if (clanCheck.rows.length === 0) return res.status(404).json({ error: "Кланът не съществува." });
+        
+        const memberCount = await pool.query('SELECT COUNT(*)::INTEGER as count FROM users WHERE clan_id = $1', [parsedClanId]);
+        if (memberCount.rows[0].count >= 5) {
+            return res.status(400).json({ error: "Кланът вече има максималните 5 членове." });
+        }
+
+        const updated = await pool.query('UPDATE users SET clan_id = $1 WHERE id = $2 RETURNING *', [parsedClanId, req.user.id]);
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
@@ -1439,7 +1541,35 @@ setInterval(async () => {
                 
                 // Reset XP
                 await pool.query('UPDATE users SET xp = 0');
-                console.log("✅ Season XP Reset completed.");
+                
+                // Clan Rewards
+                const topClans = await pool.query('SELECT id, xp FROM clans ORDER BY xp DESC LIMIT 3');
+                for (let i = 0; i < topClans.rows.length; i++) {
+                    const clan = topClans.rows[i];
+                    if (clan.xp === 0) continue;
+                    
+                    let clanReward = 0;
+                    if (i === 0) clanReward = 30.00;
+                    else if (i === 1) clanReward = 15.00;
+                    else clanReward = 5.00;
+                    
+                    // Distribute reward to clan members evenly
+                    const members = await pool.query('SELECT id FROM users WHERE clan_id = $1', [clan.id]);
+                    if (members.rows.length > 0) {
+                        const splitReward = parseFloat((clanReward / members.rows.length).toFixed(2));
+                        for (const member of members.rows) {
+                            await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [splitReward, member.id]);
+                            await pool.query(
+                                'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                                [member.id, `🛡️ Кланова Война (Място ${i+1}) Дял`, splitReward, "deposit"]
+                            );
+                        }
+                    }
+                }
+                
+                // Reset Clan XP
+                await pool.query('UPDATE clans SET xp = 0');
+                console.log("✅ Season XP & Clan Wars Reset completed.");
             }
         }
     } catch (err) {

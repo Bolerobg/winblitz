@@ -1,13 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
-
-const CLANS_DATA = {
-  1: { name: "БГ Нинджи", icon: "🛡️", xp: 12500, members: ["Никола В.", "Борис П.", "Явор К.", "Даниел С."] },
-  2: { name: "Блиц Шампиони", icon: "⚡", xp: 9800, members: ["Мартин С.", "Иван П.", "Христо В.", "Теодора А."] },
-  3: { name: "Томбола Мастърс", icon: "🏆", xp: 15400, members: ["Елена Г.", "Стефан Р.", "Мария Г.", "Лилия Б."] }
-};
 
 const getLeagueInfo = (xp) => {
     if (xp >= 15000) return { name: "Диамант", badge: "💎", color: "#67e8f9", bg: "rgba(103, 232, 249, 0.1)" };
@@ -21,10 +15,14 @@ export default function LeagueClanScreen() {
   const [tab, setTab] = useState('league'); // 'league' or 'clan'
   const [loading, setLoading] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
+  const [clansList, setClansList] = useState([]);
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [newClanName, setNewClanName] = useState('');
   const [timeLeft, setTimeLeft] = useState('...');
 
   useEffect(() => {
     fetchLeaderboard();
+    fetchClans();
     const timer = setInterval(() => {
       setTimeLeft(getRemainingTime());
     }, 60000);
@@ -60,7 +58,18 @@ export default function LeagueClanScreen() {
     }
   };
 
-  // --- League Tab Calculations ---
+  const fetchClans = async () => {
+    try {
+      const res = await apiFetch('/api/clans');
+      if (res.ok) {
+        const data = await res.json();
+        setClansList(data.clans);
+      }
+    } catch (e) {
+      console.log("Failed to fetch clans");
+    }
+  };
+
   // --- League Tab Calculations ---
   // Ensure "me" is in the list if not already there, or just mark me
   let displayPlayers = [...leaderboard];
@@ -80,9 +89,12 @@ export default function LeagueClanScreen() {
   }
   
   displayPlayers.sort((a, b) => b.xp - a.xp);
+  
+  const myClan = clansList.find(clan => parseInt(clan.id, 10) === parseInt(state.clanId, 10));
+  const sortedClans = [...clansList].sort((a, b) => parseInt(b.xp || 0, 10) - parseInt(a.xp || 0, 10));
 
   // --- Clan Join / Leave Actions ---
-  const handleJoinClan = async (clanId) => {
+  const handleJoinClan = async (clanId, clanName) => {
     setLoading(true);
     try {
       const res = await apiFetch('/api/user/join-clan', {
@@ -94,16 +106,14 @@ export default function LeagueClanScreen() {
         const data = await res.json();
         updateState({ clanId: data.user.clan_id });
         triggerSync();
-        const clanName = CLANS_DATA[clanId].name;
+        fetchClans();
         Alert.alert("Успех", `🛡️ Присъединихте се към клана "${clanName}"!`);
       } else {
-        throw new Error("Join clan API failed");
+        const err = await res.json();
+        Alert.alert("Грешка", err.error || "Неуспешно присъединяване.");
       }
     } catch (e) {
-      // Offline fallback
-      updateState({ clanId });
-      const clanName = CLANS_DATA[clanId].name;
-      Alert.alert("Офлайн режим", `🛡️ Присъединихте се към клана "${clanName}"!`);
+      Alert.alert("Грешка", "Сървърът е недостъпен.");
     } finally {
       setLoading(false);
     }
@@ -117,17 +127,47 @@ export default function LeagueClanScreen() {
       });
 
       if (res.ok) {
-        const data = await res.json();
         updateState({ clanId: null });
         triggerSync();
+        fetchClans();
         Alert.alert("Готово", "🛡️ Напуснахте клана.");
       } else {
-        throw new Error("Leave clan API failed");
+        const err = await res.json();
+        Alert.alert("Грешка", err.error || "Неуспешно напускане.");
       }
     } catch (e) {
-      // Offline fallback
-      updateState({ clanId: null });
-      Alert.alert("Офлайн режим", "🛡️ Напуснахте клана.");
+      Alert.alert("Грешка", "Сървърът е недостъпен.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmitCreateClan = async () => {
+    const name = newClanName.trim();
+    if (name.length < 3) {
+      Alert.alert("Грешка", "Името на клана трябва да е поне 3 символа.");
+      return;
+    }
+    
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/clans/create', {
+        method: 'POST',
+        body: JSON.stringify({ name, icon: "🛡️" })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        updateState({ clanId: data.user.clan_id, balance: parseFloat(data.user.balance) });
+        triggerSync();
+        setNewClanName('');
+        setCreateModalVisible(false);
+        fetchClans();
+        Alert.alert("Готово!", `Успешно създадохте клана "${name}"!`);
+      } else {
+        Alert.alert("Грешка", data.error || "Неуспешно създаване.");
+      }
+    } catch (e) {
+      Alert.alert("Грешка", "Сървърът е недостъпен.");
     } finally {
       setLoading(false);
     }
@@ -212,16 +252,16 @@ export default function LeagueClanScreen() {
       {/* --- CLAN VIEW --- */}
       {tab === 'clan' && (
         <View style={styles.section}>
-          {state.clanId ? (
+          {state.clanId && myClan ? (
             // Joined Clan View
             <View>
               <View style={styles.myClanCard}>
                 <View style={styles.myClanHeader}>
-                  <Text style={styles.myClanIcon}>{CLANS_DATA[state.clanId].icon}</Text>
+                  <Text style={styles.myClanIcon}>{myClan.icon || "🛡️"}</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.myClanName}>{CLANS_DATA[state.clanId].name}</Text>
+                    <Text style={styles.myClanName}>{myClan.name}</Text>
                     <Text style={styles.myClanStats}>
-                      {CLANS_DATA[state.clanId].members.length + 1}/5 членове • {CLANS_DATA[state.clanId].xp + state.xp} XP
+                      {myClan.member_count || myClan.members?.length || 0}/5 членове • {myClan.xp || 0} XP
                     </Text>
                   </View>
                 </View>
@@ -230,28 +270,18 @@ export default function LeagueClanScreen() {
                 
                 {/* Member Roster */}
                 <View style={styles.membersList}>
-                  {/* Me first */}
-                  <View style={styles.memberItem}>
-                    <Text style={styles.memberAvatar}>{state.activeAvatar || "👤"}</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.memberNameMe}>Вие (Член)</Text>
-                      <Text style={styles.memberRole}>Асистент</Text>
-                    </View>
-                    <Text style={styles.memberXp}>{state.xp} XP</Text>
-                  </View>
-
-                  {/* Rest of simulated members */}
-                  {CLANS_DATA[state.clanId].members.map((name, i) => {
-                    const botXp = Math.round(CLANS_DATA[state.clanId].xp / 4 - (i * 200) + Math.sin(i) * 50);
-                    const botAv = ["🛡️", "🦊", "🐯", "🐼"][i % 4];
+                  {(myClan.members || []).map((member) => {
+                    const isMe = member.is_current_user || member.id === state.user?.id;
                     return (
-                      <View key={name} style={styles.memberItem}>
-                        <Text style={styles.memberAvatar}>{botAv}</Text>
+                      <View key={member.id} style={[styles.memberItem, isMe && styles.memberItemMe]}>
+                        <Text style={styles.memberAvatar}>{member.active_avatar || "👤"}</Text>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.memberName}>{name}</Text>
-                          <Text style={styles.memberRole}>{i === 0 ? "Лидер" : "Войн"}</Text>
+                          <Text style={isMe ? styles.memberNameMe : styles.memberName}>
+                            {isMe ? "Вие" : (member.fullname || "Играч")}
+                          </Text>
+                          <Text style={styles.memberRole}>{member.is_creator ? "Лидер" : "Войн"}</Text>
                         </View>
-                        <Text style={styles.memberXp}>{botXp} XP</Text>
+                        <Text style={styles.memberXp}>{member.xp || 0} XP</Text>
                       </View>
                     );
                   })}
@@ -271,21 +301,24 @@ export default function LeagueClanScreen() {
               {/* Clans Leaderboard in joined mode */}
               <Text style={styles.sectionHeader}>📈 Класация на клановете</Text>
               <View style={styles.listCard}>
-                {Object.keys(CLANS_DATA).map((id) => {
-                  const c = CLANS_DATA[id];
-                  const isMyClan = parseInt(id) === state.clanId;
-                  const totalClanXp = isMyClan ? c.xp + state.xp : c.xp;
+                {sortedClans.map((c) => {
+                  const isMyClan = parseInt(c.id, 10) === parseInt(state.clanId, 10);
                   return (
-                    <View key={id} style={[styles.rankItem, isMyClan && styles.rankItemMe]}>
-                      <Text style={styles.rankIndex}>{c.icon}</Text>
+                    <View key={c.id} style={[styles.rankItem, isMyClan && styles.rankItemMe]}>
+                      <Text style={styles.rankIndex}>{c.icon || "🛡️"}</Text>
                       <Text style={[styles.rankName, isMyClan && styles.rankNameMe]}>
                         {c.name} {isMyClan && "(Моят)"}
                       </Text>
-                      <Text style={styles.rankXp}>{totalClanXp} XP</Text>
+                      <Text style={styles.rankXp}>{c.xp || 0} XP</Text>
                     </View>
                   );
                 })}
               </View>
+            </View>
+          ) : state.clanId && !myClan ? (
+            <View style={styles.emptyClanCard}>
+              <ActivityIndicator size="small" color="#a855f7" />
+              <Text style={styles.emptyClanText}>Зареждаме данните за клана...</Text>
             </View>
           ) : (
             // Unjoined View - Join list
@@ -293,22 +326,37 @@ export default function LeagueClanScreen() {
               <Text style={styles.sectionTitle}>🛡️ Присъединете се към Клан</Text>
               <Text style={styles.sectionDesc}>Обединете сили с други играчи, за да трупате общ XP резултат и да печелите кланови войни.</Text>
 
-              {Object.keys(CLANS_DATA).map((id) => {
-                const c = CLANS_DATA[id];
+              <TouchableOpacity
+                style={styles.createClanBtn}
+                onPress={() => setCreateModalVisible(true)}
+                disabled={loading}
+              >
+                <Ionicons name="add-circle-outline" size={16} color="#fff" />
+                <Text style={styles.createClanBtnText}>Създай клан (€2.00)</Text>
+              </TouchableOpacity>
+
+              {sortedClans.length === 0 && (
+                <View style={styles.emptyClanCard}>
+                  <Text style={styles.emptyClanText}>Все още няма кланове. Създайте първия.</Text>
+                </View>
+              )}
+
+              {sortedClans.map((c) => {
+                const isFull = (c.member_count || c.members?.length || 0) >= 5;
                 return (
-                  <View key={id} style={styles.clanJoinCard}>
+                  <View key={c.id} style={styles.clanJoinCard}>
                     <View style={styles.clanJoinHeader}>
-                      <Text style={styles.clanJoinIcon}>{c.icon}</Text>
+                      <Text style={styles.clanJoinIcon}>{c.icon || "🛡️"}</Text>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.clanJoinName}>{c.name}</Text>
-                        <Text style={styles.clanJoinStats}>{c.members.length}/5 членове • {c.xp} XP</Text>
+                        <Text style={styles.clanJoinStats}>{c.member_count || c.members?.length || 0}/5 членове • {c.xp || 0} XP</Text>
                       </View>
                       <TouchableOpacity 
-                        style={styles.joinBtn} 
-                        onPress={() => handleJoinClan(parseInt(id))}
-                        disabled={loading}
+                        style={[styles.joinBtn, isFull && styles.joinBtnDisabled]} 
+                        onPress={() => handleJoinClan(c.id, c.name)}
+                        disabled={loading || isFull}
                       >
-                        <Text style={styles.joinBtnText}>Влез</Text>
+                        <Text style={styles.joinBtnText}>{isFull ? "Пълен" : "Влез"}</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -318,6 +366,47 @@ export default function LeagueClanScreen() {
           )}
         </View>
       )}
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={createModalVisible}
+        onRequestClose={() => setCreateModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.createModal}>
+            <Text style={styles.createModalTitle}>Нов клан</Text>
+            <Text style={styles.createModalDesc}>Такса за създаване: €2.00</Text>
+            <TextInput
+              style={styles.createModalInput}
+              value={newClanName}
+              onChangeText={setNewClanName}
+              placeholder="Име на клана"
+              placeholderTextColor="#71717a"
+              maxLength={40}
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => {
+                  setNewClanName('');
+                  setCreateModalVisible(false);
+                }}
+                disabled={loading}
+              >
+                <Text style={styles.modalCancelText}>Отказ</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalCreateBtn}
+                onPress={handleSubmitCreateClan}
+                disabled={loading}
+              >
+                <Text style={styles.modalCreateText}>Създай</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {loading && (
         <View style={styles.loadingOverlay}>
@@ -484,6 +573,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.03)',
   },
+  memberItemMe: {
+    backgroundColor: 'rgba(168, 85, 247, 0.08)',
+    borderColor: 'rgba(168, 85, 247, 0.18)',
+  },
   memberAvatar: {
     fontSize: 18,
     marginRight: 10,
@@ -570,10 +663,110 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 8,
   },
+  joinBtnDisabled: {
+    backgroundColor: '#3f3f46',
+  },
   joinBtnText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: '800',
+  },
+  createClanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8b5cf6',
+    paddingVertical: 11,
+    borderRadius: 10,
+    gap: 6,
+    marginBottom: 12,
+  },
+  createClanBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  emptyClanCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 14,
+    padding: 18,
+    marginBottom: 12,
+  },
+  emptyClanText: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(5, 2, 15, 0.78)',
+    justifyContent: 'center',
+    padding: 22,
+  },
+  createModal: {
+    backgroundColor: '#120b2b',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(168, 85, 247, 0.25)',
+    padding: 18,
+  },
+  createModalTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '900',
+    marginBottom: 5,
+  },
+  createModalDesc: {
+    color: '#a1a1aa',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 14,
+  },
+  createModalInput: {
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 10,
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  modalCreateBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#8b5cf6',
+  },
+  modalCancelText: {
+    color: '#d4d4d8',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  modalCreateText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
