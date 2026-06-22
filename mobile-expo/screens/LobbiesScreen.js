@@ -45,6 +45,103 @@ export default function LobbiesScreen({ navigation, onOpenLuckyWheel, onOpenFrie
 
   // Filter out completed/private duels for this list (only show active public tournaments)
   const publicTournaments = (state.lobbies || []).filter(l => !l.isFriendDuel);
+  
+  const freerollTournaments = publicTournaments.filter(l => l.ticketPrice === 0);
+  const regularTournaments = publicTournaments.filter(l => l.ticketPrice > 0);
+
+  const renderLobbyCard = (lobby, isFreeroll = false) => {
+    const players = lobby.players || [];
+    const playersCount = players.length;
+    
+    return (
+      <View key={lobby.id} style={[styles.lobbyCard, isFreeroll && !state.practiceModeActive ? styles.freerollCard : null]}>
+        {isFreeroll && !state.practiceModeActive && (
+          <View style={styles.freerollBadgeContainer}>
+            <Text style={styles.freerollBadgeText}>🎁 БЕЗПЛАТЕН ТУРНИР (FREEROLL)</Text>
+          </View>
+        )}
+        
+        {/* Product Image placeholder if null */}
+        <View style={styles.imageContainer}>
+          {lobby.image ? (
+            <Image source={{ uri: lobby.image }} style={styles.lobbyImage} />
+          ) : (
+            <View style={[styles.lobbyImage, styles.imagePlaceholder]}>
+              <Ionicons name="gift" size={40} color="rgba(255,255,255,0.2)" />
+            </View>
+          )}
+          <View style={[styles.productTypeBadge, isFreeroll && !state.practiceModeActive && { backgroundColor: '#ef4444' }]}>
+            <Text style={styles.productTypeText}>
+              {lobby.productType === 'wallpaper' ? "🖼️ Тапет" : 
+               lobby.productType === 'guide' ? "📚 Гайд" : "🎫 Ваучер"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.lobbyInfo}>
+          <Text style={[styles.prizeName, isFreeroll && !state.practiceModeActive && { color: '#ef4444' }]}>
+            {lobby.prizeName}
+          </Text>
+          
+          {/* Entry fee and prize value */}
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Награда</Text>
+              <Text style={[styles.statValPrize, isFreeroll && !state.practiceModeActive && { color: '#ef4444' }]}>
+                €{lobby.prizeValue.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statLabel}>Вход</Text>
+              <Text style={styles.statValFee}>
+                {state.practiceModeActive ? "БЕЗПЛАТНО" : (isFreeroll ? "БЕЗПЛАТНО" : `€${lobby.ticketPrice.toFixed(2)}`)}
+              </Text>
+            </View>
+          </View>
+
+          {/* Progress bar / Player count */}
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBarBg}>
+              <View 
+                style={[
+                  styles.progressBarFill, 
+                  { width: `${(playersCount / lobby.maxPlayers) * 100}%` },
+                  isFreeroll && !state.practiceModeActive && { backgroundColor: '#ef4444' }
+                ]} 
+              />
+            </View>
+            <Text style={styles.progressText}>
+              Играчи: <Text style={styles.boldText}>{playersCount}/{lobby.maxPlayers}</Text>
+            </Text>
+          </View>
+
+          {/* Action buttons */}
+          <View style={styles.actionButtonsRow}>
+            <TouchableOpacity 
+              style={[
+                styles.joinButton, 
+                state.practiceModeActive ? styles.joinButtonPractice : (isFreeroll ? styles.joinButtonFreeroll : styles.joinButtonReal)
+              ]}
+              activeOpacity={0.8}
+              onPress={() => handleJoinLobby(lobby)}
+            >
+              <Text style={styles.joinButtonText}>
+                {state.practiceModeActive ? "Започни тренировка" : (isFreeroll ? "Влез БЕЗПЛАТНО" : "Купи билет & Играй")}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.shareButton, isFreeroll && !state.practiceModeActive && { backgroundColor: 'rgba(239, 68, 68, 0.2)', borderColor: 'rgba(239, 68, 68, 0.4)' }]}
+              activeOpacity={0.8}
+              onPress={() => handleShare(lobby)}
+            >
+              <Ionicons name="share-social" size={20} color={isFreeroll && !state.practiceModeActive ? "#ef4444" : "#fff"} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -102,88 +199,10 @@ export default function LobbiesScreen({ navigation, onOpenLuckyWheel, onOpenFrie
           <Text style={styles.emptyText}>Няма активни турнири в момента.</Text>
         </View>
       ) : (
-        publicTournaments.map((lobby) => {
-          const players = lobby.players || [];
-          const playersCount = players.length;
-          
-          return (
-            <View key={lobby.id} style={styles.lobbyCard}>
-              {/* Product Image placeholder if null */}
-              <View style={styles.imageContainer}>
-                {lobby.image ? (
-                  <Image source={{ uri: lobby.image }} style={styles.lobbyImage} />
-                ) : (
-                  <View style={[styles.lobbyImage, styles.imagePlaceholder]}>
-                    <Ionicons name="gift" size={40} color="rgba(255,255,255,0.2)" />
-                  </View>
-                )}
-                <View style={styles.productTypeBadge}>
-                  <Text style={styles.productTypeText}>
-                    {lobby.productType === 'wallpaper' ? "🖼️ Тапет" : 
-                     lobby.productType === 'guide' ? "📚 Гайд" : "🎫 Ваучер"}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.lobbyInfo}>
-                <Text style={styles.prizeName}>{lobby.prizeName}</Text>
-                
-                {/* Entry fee and prize value */}
-                <View style={styles.statsRow}>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Награда</Text>
-                    <Text style={styles.statValPrize}>€{lobby.prizeValue.toFixed(2)}</Text>
-                  </View>
-                  <View style={styles.statItem}>
-                    <Text style={styles.statLabel}>Вход</Text>
-                    <Text style={styles.statValFee}>
-                      {state.practiceModeActive ? "БЕЗПЛАТНО" : `€${lobby.ticketPrice.toFixed(2)}`}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Progress bar / Player count */}
-                <View style={styles.progressContainer}>
-                  <View style={styles.progressBarBg}>
-                    <View 
-                      style={[
-                        styles.progressBarFill, 
-                        { width: `${(playersCount / lobby.maxPlayers) * 100}%` }
-                      ]} 
-                    />
-                  </View>
-                  <Text style={styles.progressText}>
-                    Играчи: <Text style={styles.boldText}>{playersCount}/{lobby.maxPlayers}</Text>
-                  </Text>
-                </View>
-
-                {/* Action buttons */}
-                <View style={styles.actionButtonsRow}>
-                  <TouchableOpacity 
-                    style={[
-                      styles.joinButton, 
-                      state.practiceModeActive ? styles.joinButtonPractice : styles.joinButtonReal
-                    ]}
-                    activeOpacity={0.8}
-                    onPress={() => handleJoinLobby(lobby)}
-                  >
-                    <Text style={styles.joinButtonText}>
-                      {state.practiceModeActive ? "Започни тренировка" : "Купи билет & Играй"}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={styles.shareButton}
-                    activeOpacity={0.8}
-                    onPress={() => handleShare(lobby)}
-                  >
-                    <Ionicons name="share-social" size={20} color="#fff" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          );
-        })
+        <>
+          {freerollTournaments.map(lobby => renderLobbyCard(lobby, true))}
+          {regularTournaments.map(lobby => renderLobbyCard(lobby, false))}
+        </>
       )}
     </ScrollView>
   );
@@ -288,6 +307,28 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.05)',
     overflow: 'hidden',
     marginBottom: 15,
+  },
+  freerollCard: {
+    borderColor: '#ef4444',
+    borderWidth: 2,
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+    shadowColor: '#ef4444',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5,
+  },
+  freerollBadgeContainer: {
+    backgroundColor: '#ef4444',
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  freerollBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   imageContainer: {
     width: '100%',
