@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Image, ImageBackground } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Switch, Image, Share } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 
@@ -24,6 +24,22 @@ export default function LobbiesScreen({ navigation, onOpenLuckyWheel, onOpenFrie
       navigation.navigate('Game', { lobbyId: lobby.id });
     } else {
       alert(res.error || "Грешка при присъединяване.");
+    }
+  };
+
+  const handleShare = async (lobby) => {
+    try {
+      const isFree = state.practiceModeActive || lobby.ticketPrice === 0;
+      const feeText = isFree ? "НАПЪЛНО БЕЗПЛАТНО" : `само за €${lobby.ticketPrice.toFixed(2)}`;
+      
+      const message = `Ей, включи се в WinBlitz! ⚡\nИма турнир за ${lobby.prizeName} (на стойност €${lobby.prizeValue.toFixed(2)}). Участието е ${feeText}!\nЕла да покажеш колко си бърз и спечели наградата! 🏆\n\nИзтегли приложението: https://winblitz.app`;
+      
+      await Share.share({
+        message,
+        title: 'Покана за турнир в WinBlitz',
+      });
+    } catch (error) {
+      console.log("Error sharing:", error.message);
     }
   };
 
@@ -141,19 +157,29 @@ export default function LobbiesScreen({ navigation, onOpenLuckyWheel, onOpenFrie
                   </Text>
                 </View>
 
-                {/* Action button */}
-                <TouchableOpacity 
-                  style={[
-                    styles.joinButton, 
-                    state.practiceModeActive ? styles.joinButtonPractice : styles.joinButtonReal
-                  ]}
-                  activeOpacity={0.8}
-                  onPress={() => handleJoinLobby(lobby)}
-                >
-                  <Text style={styles.joinButtonText}>
-                    {state.practiceModeActive ? "Започни тренировка" : "Купи билет & Играй"}
-                  </Text>
-                </TouchableOpacity>
+                {/* Action buttons */}
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity 
+                    style={[
+                      styles.joinButton, 
+                      state.practiceModeActive ? styles.joinButtonPractice : styles.joinButtonReal
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => handleJoinLobby(lobby)}
+                  >
+                    <Text style={styles.joinButtonText}>
+                      {state.practiceModeActive ? "Започни тренировка" : "Купи билет & Играй"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.shareButton}
+                    activeOpacity={0.8}
+                    onPress={() => handleShare(lobby)}
+                  >
+                    <Ionicons name="share-social" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
           );
@@ -356,12 +382,28 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
   },
-  joinButton: {
+  actionButtonsRow: {
+    flexDirection: 'row',
     marginTop: 15,
+    alignItems: 'center',
+    gap: 10,
+  },
+  joinButton: {
+    flex: 1,
     padding: 12,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  shareButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
   },
   joinButtonReal: {
     backgroundColor: '#8b5cf6',
