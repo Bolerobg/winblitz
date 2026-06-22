@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 
 const AppContext = createContext();
 
-const BACKEND_URL = 'http://193.46.243.232:3080';
+const BACKEND_URL = 'http://193.46.243.232:3005';
 
 const DEFAULT_QUESTS = [
   { id: "spin", desc: "Завъртете Колелото на Късмета", target: 1, current: 0, reward: 0.50, claimed: false },
