@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
     loot_boxes_owned INTEGER DEFAULT 0,
     unlocked_achievements TEXT[] DEFAULT ARRAY[]::TEXT[],
     daily_quests JSONB DEFAULT '[]'::JSONB,
+    daily_quests_date VARCHAR(50),
     last_spin_date VARCHAR(50),
     promo_code VARCHAR(20) UNIQUE,
     referred_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -101,6 +102,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Migration queries (ensure compatibility with pre-existing tables)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_spin_date VARCHAR(50);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS clan_id INTEGER;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_quests_date VARCHAR(50);
 ALTER TABLE wallet_history ADD COLUMN IF NOT EXISTS stripe_payment_intent_id VARCHAR(100) UNIQUE;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS product_url TEXT;
 ALTER TABLE completed_games ADD COLUMN IF NOT EXISTS product_type VARCHAR(50);
@@ -131,6 +133,7 @@ ON CONFLICT (name) DO NOTHING;
 UPDATE users SET unlocked_achievements = ARRAY[]::TEXT[] WHERE unlocked_achievements IS NULL;
 UPDATE users SET unlocked_avatars = ARRAY['👤']::TEXT[] WHERE unlocked_avatars IS NULL;
 UPDATE users SET unlocked_themes = ARRAY['default']::TEXT[] WHERE unlocked_themes IS NULL;
+UPDATE users SET daily_quests = '[]'::JSONB WHERE daily_quests IS NULL;
 
 
 
@@ -161,4 +164,9 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='streak_count') THEN
         ALTER TABLE users ADD COLUMN streak_count INTEGER DEFAULT 0;
     END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='daily_quests_date') THEN
+        ALTER TABLE users ADD COLUMN daily_quests_date VARCHAR(50);
+    END IF;
 END $$;
+
+UPDATE users SET promo_code = 'WIN-' || id::TEXT WHERE promo_code IS NULL;

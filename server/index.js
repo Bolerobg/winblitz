@@ -46,7 +46,7 @@ function verifyToken(token, expectedType) {
     const actual = parts[2];
     if (expected.length !== actual.length) return null;
     if (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(actual))) return null;
-    
+
     try {
         const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
         if (expectedType && payload.type !== expectedType) return null;
@@ -106,6 +106,59 @@ function buildDefaultQuests() {
     ];
 }
 
+function getDailyQuestDateKey() {
+    return new Date().toLocaleDateString('bg-BG', {
+        timeZone: 'Europe/Sofia',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+}
+
+async function generateUniquePromoCode() {
+    for (let i = 0; i < 10; i++) {
+        const code = generatePromoCode();
+        const existing = await pool.query('SELECT id FROM users WHERE promo_code = $1', [code]);
+        if (existing.rows.length === 0) return code;
+    }
+    return `WIN-${Date.now().toString(36).toUpperCase()}`;
+}
+
+async function prepareUserForRequest(user) {
+    if (!user) return user;
+
+    const todayKey = getDailyQuestDateKey();
+    const updates = [];
+    const params = [];
+
+    if (!user.promo_code) {
+        params.push(await generateUniquePromoCode());
+        updates.push(`promo_code = $${params.length}`);
+    }
+
+    if (user.daily_quests_date !== todayKey) {
+        params.push(JSON.stringify(buildDefaultQuests()));
+        updates.push(`daily_quests = $${params.length}`);
+        params.push(todayKey);
+        updates.push(`daily_quests_date = $${params.length}`);
+    } else {
+        const quests = typeof user.daily_quests === 'string' ? JSON.parse(user.daily_quests) : user.daily_quests;
+        if (!quests || !Array.isArray(quests) || quests.length === 0) {
+            params.push(JSON.stringify(buildDefaultQuests()));
+            updates.push(`daily_quests = $${params.length}`);
+        }
+    }
+
+    if (updates.length === 0) return user;
+
+    params.push(user.id);
+    const result = await pool.query(
+        `UPDATE users SET ${updates.join(', ')} WHERE id = $${params.length} RETURNING *`,
+        params
+    );
+    return result.rows[0];
+}
+
 // SMTP Transporter Config
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
@@ -159,7 +212,7 @@ app.use(async (req, res, next) => {
     const tokenPayload = verifyToken(getBearerToken(req), 'user');
     const email = req.headers['x-user-email'];
     const phone = req.headers['x-user-phone'];
-    
+
     if (tokenPayload && tokenPayload.userId) {
         try {
             const result = await pool.query('SELECT * FROM users WHERE id = $1', [tokenPayload.userId]);
@@ -178,12 +231,12 @@ app.use(async (req, res, next) => {
             } else {
                 // Auto create unverified user
                 const newUser = await pool.query(
-                    `INSERT INTO users (email, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code) 
-                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2, $3) RETURNING *`,
-                    [emailVal, JSON.stringify(buildDefaultQuests()), generatePromoCode()]
+                    `INSERT INTO users (email, balance, unlocked_avatars, unlocked_themes, daily_quests, daily_quests_date, promo_code)
+                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2, $3, $4) RETURNING *`,
+                    [emailVal, JSON.stringify(buildDefaultQuests()), getDailyQuestDateKey(), await generateUniquePromoCode()]
                 );
                 req.user = newUser.rows[0];
-                
+
                 // Initial bonus transaction
                 await pool.query(
                     'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
@@ -201,12 +254,12 @@ app.use(async (req, res, next) => {
             } else {
                 // Auto create unverified user
                 const newUser = await pool.query(
-                    `INSERT INTO users (phone, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code) 
-                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2, $3) RETURNING *`,
-                    [phone.trim(), JSON.stringify(buildDefaultQuests()), generatePromoCode()]
+                    `INSERT INTO users (phone, balance, unlocked_avatars, unlocked_themes, daily_quests, daily_quests_date, promo_code)
+                     VALUES ($1, 100.00, ARRAY['👤'], ARRAY['default'], $2, $3, $4) RETURNING *`,
+                    [phone.trim(), JSON.stringify(buildDefaultQuests()), getDailyQuestDateKey(), await generateUniquePromoCode()]
                 );
                 req.user = newUser.rows[0];
-                
+
                 // Initial bonus transaction
                 await pool.query(
                     'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
@@ -215,6 +268,13 @@ app.use(async (req, res, next) => {
             }
         } catch (err) {
             console.error("Middleware auth error (phone):", err);
+        }
+    }
+    if (req.user) {
+        try {
+            req.user = await prepareUserForRequest(req.user);
+        } catch (err) {
+            console.error("Middleware user preparation error:", err);
         }
     }
     if (req.user) {
@@ -272,7 +332,7 @@ app.get('/api/user/state', async (req, res) => {
         const walletResult = await pool.query('SELECT * FROM wallet_history WHERE user_id = $1 ORDER BY id DESC', [req.user.id]);
         const prizesResult = await pool.query('SELECT * FROM won_prizes WHERE user_id = $1 ORDER BY id DESC', [req.user.id]);
         const completedResult = await pool.query('SELECT * FROM completed_games ORDER BY id DESC');
-        
+
         res.json({
             user: req.user,
             walletHistory: walletResult.rows,
@@ -289,11 +349,11 @@ app.get('/api/user/state', async (req, res) => {
 app.post('/api/auth/register-sms', async (req, res) => {
     const { phone, fullname, city, address, referralCode } = req.body;
     if (!phone) return res.status(400).json({ error: "Missing phone" });
-    
+
     try {
         const simulatedCode = Math.floor(1000 + Math.random() * 9000).toString();
         console.log(`[SMS SIMULATION] Code for ${phone}: ${simulatedCode}`);
-        
+
         let referrerId = null;
         if (referralCode && referralCode.trim() !== '') {
             const referrerRes = await pool.query('SELECT id FROM users WHERE promo_code = $1', [referralCode.trim().toUpperCase()]);
@@ -304,31 +364,32 @@ app.post('/api/auth/register-sms', async (req, res) => {
 
         let result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
         let user;
-        
+
         if (result.rows.length > 0) {
             // Update existing unverified account, also set referred_by if applicable and not already set
             const existingUser = result.rows[0];
             const finalReferrerId = existingUser.referred_by || referrerId;
             const updated = await pool.query(
-                `UPDATE users SET fullname = $1, city = $2, address = $3, sms_code = $4, verified = FALSE, referred_by = $5 
+                `UPDATE users SET fullname = $1, city = $2, address = $3, sms_code = $4, verified = FALSE, referred_by = $5
                  WHERE phone = $6 RETURNING *`,
                 [fullname, city, address, simulatedCode, finalReferrerId, phone]
             );
             user = updated.rows[0];
         } else {
             const inserted = await pool.query(
-                `INSERT INTO users (phone, fullname, city, address, sms_code, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code, referred_by) 
-                 VALUES ($1, $2, $3, $4, $5, 100.00, ARRAY['👤'], ARRAY['default'], $6, $7, $8) RETURNING *`,
-                [phone, fullname, city, address, simulatedCode, JSON.stringify(buildDefaultQuests()), generatePromoCode(), referrerId]
+                `INSERT INTO users (phone, fullname, city, address, sms_code, balance, unlocked_avatars, unlocked_themes, daily_quests, daily_quests_date, promo_code, referred_by)
+                 VALUES ($1, $2, $3, $4, $5, 100.00, ARRAY['👤'], ARRAY['default'], $6, $7, $8, $9) RETURNING *`,
+                [phone, fullname, city, address, simulatedCode, JSON.stringify(buildDefaultQuests()), getDailyQuestDateKey(), await generateUniquePromoCode(), referrerId]
             );
             user = inserted.rows[0];
-            
+
             await pool.query(
                 'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
                 [user.id, "Начален бонус (Демо)", 100.00, "deposit"]
             );
         }
-        
+
+        user = await prepareUserForRequest(user);
         res.json({ success: true, code: simulatedCode, user });
     } catch (err) {
         console.error(err);
@@ -340,21 +401,22 @@ app.post('/api/auth/register-sms', async (req, res) => {
 app.post('/api/auth/verify-sms', async (req, res) => {
     const { phone, code } = req.body;
     if (!phone || !code) return res.status(400).json({ error: "Missing params" });
-    
+
     try {
         const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
         if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
-        
+
         const user = result.rows[0];
         if (user.sms_code === code) {
             const verifiedUser = await pool.query(
                 'UPDATE users SET verified = TRUE, sms_code = NULL WHERE id = $1 RETURNING *',
                 [user.id]
             );
+            const preparedUser = await prepareUserForRequest(verifiedUser.rows[0]);
             res.json({
                 success: true,
-                user: verifiedUser.rows[0],
-                authToken: signToken({ type: 'user', userId: verifiedUser.rows[0].id })
+                user: preparedUser,
+                authToken: signToken({ type: 'user', userId: preparedUser.id })
             });
         } else {
             res.status(400).json({ success: false, error: "Wrong code" });
@@ -369,18 +431,18 @@ app.post('/api/auth/verify-sms', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
     const { email, password, fullname, city, address, referralCode } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
-    
+
     try {
         const emailVal = email.trim().toLowerCase();
         let result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
-        
+
         if (result.rows.length > 0) {
             // Unverified user might exist from middleware. Let's see if they have password.
             if (result.rows[0].password_hash) {
                 return res.status(400).json({ error: "Потребител с този имейл вече съществува." });
             }
         }
-        
+
         let referrerId = null;
         if (referralCode && referralCode.trim() !== '') {
             const referrerRes = await pool.query('SELECT id FROM users WHERE promo_code = $1', [referralCode.trim().toUpperCase()]);
@@ -388,34 +450,35 @@ app.post('/api/auth/register', async (req, res) => {
                 referrerId = referrerRes.rows[0].id;
             }
         }
-        
+
         const salt = await bcrypt.genSalt(10);
         const hash = await bcrypt.hash(password, salt);
-        
+
         let user;
         if (result.rows.length > 0) {
             const existingUser = result.rows[0];
             const finalReferrerId = existingUser.referred_by || referrerId;
             const updated = await pool.query(
-                `UPDATE users SET password_hash = $1, fullname = $2, city = $3, address = $4, verified = TRUE, referred_by = $5 
+                `UPDATE users SET password_hash = $1, fullname = $2, city = $3, address = $4, verified = TRUE, referred_by = $5
                  WHERE email = $6 RETURNING *`,
                 [hash, fullname, city, address, finalReferrerId, emailVal]
             );
             user = updated.rows[0];
         } else {
             const inserted = await pool.query(
-                `INSERT INTO users (email, password_hash, fullname, city, address, verified, balance, unlocked_avatars, unlocked_themes, daily_quests, promo_code, referred_by) 
-                 VALUES ($1, $2, $3, $4, $5, TRUE, 100.00, ARRAY['👤'], ARRAY['default'], $6, $7, $8) RETURNING *`,
-                [emailVal, hash, fullname, city, address, JSON.stringify(buildDefaultQuests()), generatePromoCode(), referrerId]
+                `INSERT INTO users (email, password_hash, fullname, city, address, verified, balance, unlocked_avatars, unlocked_themes, daily_quests, daily_quests_date, promo_code, referred_by)
+                 VALUES ($1, $2, $3, $4, $5, TRUE, 100.00, ARRAY['👤'], ARRAY['default'], $6, $7, $8, $9) RETURNING *`,
+                [emailVal, hash, fullname, city, address, JSON.stringify(buildDefaultQuests()), getDailyQuestDateKey(), await generateUniquePromoCode(), referrerId]
             );
             user = inserted.rows[0];
-            
+
             await pool.query(
                 'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
                 [user.id, "Начален бонус (Демо)", 100.00, "deposit"]
             );
         }
-        
+
+        user = await prepareUserForRequest(user);
         res.json({
             success: true,
             user,
@@ -431,22 +494,23 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
-    
+
     try {
         const emailVal = email.trim().toLowerCase();
         const result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
         if (result.rows.length === 0) return res.status(404).json({ error: "Грешен имейл или парола." });
-        
-        const user = result.rows[0];
+
+        let user = result.rows[0];
         if (!user.password_hash) {
              return res.status(400).json({ error: "Този профил не е създаден с парола. Моля, свържете се с поддръжката." });
         }
-        
+
         const isMatch = await bcrypt.compare(password, user.password_hash);
         if (!isMatch) {
             return res.status(400).json({ error: "Грешен имейл или парола." });
         }
-        
+
+        user = await prepareUserForRequest(user);
         res.json({
             success: true,
             user,
@@ -471,11 +535,11 @@ app.post('/api/auth/forgot-password', async (req, res) => {
         }
 
         const resetCode = Math.floor(1000 + Math.random() * 9000).toString();
-        
+
         await pool.query('UPDATE users SET reset_code = $1 WHERE email = $2', [resetCode, emailVal]);
-        
+
         await sendVerificationEmail(emailVal, resetCode);
-        
+
         res.json({ success: true, message: "Кодът за възстановяване е изпратен." });
     } catch (err) {
         console.error(err);
@@ -534,30 +598,30 @@ app.post('/api/user/update-address', async (req, res) => {
 app.post('/api/user/claim-quest', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const { questId } = req.body;
-    
+
     try {
         let quests = typeof req.user.daily_quests === 'string' ? JSON.parse(req.user.daily_quests) : req.user.daily_quests;
         if (!quests || quests.length === 0) quests = buildDefaultQuests();
-        
+
         const quest = quests.find(q => q.id === questId);
         if (!quest || quest.current < quest.target || quest.claimed) {
             return res.status(400).json({ error: "Quest not claimable" });
         }
-        
+
         quest.claimed = true;
         const newBalance = parseFloat(req.user.balance) + quest.reward;
-        
+
         // Save to DB
         const updated = await pool.query(
             'UPDATE users SET balance = $1, daily_quests = $2 WHERE id = $3 RETURNING *',
             [newBalance, JSON.stringify(quests), req.user.id]
         );
-        
+
         await pool.query(
             'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
             [req.user.id, `Награда от мисия: ${quest.desc}`, quest.reward, "deposit"]
         );
-        
+
         // Auto check millionaire achievement
         let userState = updated.rows[0];
         const currentAchievements = userState.unlocked_achievements || [];
@@ -566,7 +630,7 @@ app.post('/api/user/claim-quest', async (req, res) => {
             const u = await pool.query('UPDATE users SET unlocked_achievements = $1 WHERE id = $2 RETURNING *', [achievements, req.user.id]);
             userState = u.rows[0];
         }
-        
+
         res.json({ success: true, user: userState });
     } catch (err) {
         console.error(err);
@@ -578,28 +642,28 @@ app.post('/api/user/claim-quest', async (req, res) => {
 app.post('/api/user/buy-avatar', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const { avatar, price } = req.body;
-    
+
     if (parseFloat(req.user.balance) < price) {
         return res.status(400).json({ error: "Insufficient balance" });
     }
     if (req.user.unlocked_avatars.includes(avatar)) {
         return res.status(400).json({ error: "Already unlocked" });
     }
-    
+
     try {
         const newBalance = parseFloat(req.user.balance) - price;
         const unlockedAvatars = [...req.user.unlocked_avatars, avatar];
-        
+
         let updated = await pool.query(
             'UPDATE users SET balance = $1, unlocked_avatars = $2 WHERE id = $3 RETURNING *',
             [newBalance, unlockedAvatars, req.user.id]
         );
-        
+
         await pool.query(
             'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
             [req.user.id, `Покупка на аватар: ${avatar}`, -price, "withdrawal"]
         );
-        
+
         let userState = updated.rows[0];
         const currentAchievements = userState.unlocked_achievements || [];
         if (unlockedAvatars.length >= 3 && !currentAchievements.includes('collector')) {
@@ -607,7 +671,7 @@ app.post('/api/user/buy-avatar', async (req, res) => {
             const u = await pool.query('UPDATE users SET unlocked_achievements = $1 WHERE id = $2 RETURNING *', [achievements, req.user.id]);
             userState = u.rows[0];
         }
-        
+
         res.json({ success: true, user: userState });
     } catch (err) {
         console.error(err);
@@ -619,28 +683,28 @@ app.post('/api/user/buy-avatar', async (req, res) => {
 app.post('/api/user/buy-theme', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const { themeId, price, themeName } = req.body;
-    
+
     if (parseFloat(req.user.balance) < price) {
         return res.status(400).json({ error: "Insufficient balance" });
     }
     if (req.user.unlocked_themes.includes(themeId)) {
         return res.status(400).json({ error: "Already unlocked" });
     }
-    
+
     try {
         const newBalance = parseFloat(req.user.balance) - price;
         const unlockedThemes = [...req.user.unlocked_themes, themeId];
-        
+
         const updated = await pool.query(
             'UPDATE users SET balance = $1, unlocked_themes = $2 WHERE id = $3 RETURNING *',
             [newBalance, unlockedThemes, req.user.id]
         );
-        
+
         await pool.query(
             'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
             [req.user.id, `Покупка на тема: ${themeName}`, -price, "withdrawal"]
         );
-        
+
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
@@ -684,19 +748,19 @@ app.post('/api/user/select-theme', async (req, res) => {
 app.post('/api/user/open-lootbox', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     if (req.user.loot_boxes_owned <= 0) return res.status(400).json({ error: "No loot boxes" });
-    
+
     try {
         const rand = Math.random();
         let rewardText = "";
         let newBalance = parseFloat(req.user.balance);
         let unlockedAvatars = [...req.user.unlocked_avatars];
         const newLootBoxes = req.user.loot_boxes_owned - 1;
-        
+
         if (rand < 0.60) {
             const amounts = [0.50, 1.00, 2.00, 5.00];
             const amount = amounts[Math.floor(Math.random() * amounts.length)];
             newBalance += amount;
-            
+
             await pool.query(
                 'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
                 [req.user.id, "Награда от Мистериозна Кутия 🎁", amount, "deposit"]
@@ -705,7 +769,7 @@ app.post('/api/user/open-lootbox', async (req, res) => {
         } else {
             const avs = ["🦊", "🐯", "🐼", "👾", "🚀", "💎", "🐉"];
             const possibleAvs = avs.filter(a => !unlockedAvatars.includes(a));
-            
+
             if (possibleAvs.length > 0) {
                 const newAv = possibleAvs[Math.floor(Math.random() * possibleAvs.length)];
                 unlockedAvatars.push(newAv);
@@ -720,12 +784,12 @@ app.post('/api/user/open-lootbox', async (req, res) => {
                 rewardText = `🎉 Тъй като имате всички аватари, получихте <strong>€${amount.toFixed(2)}</strong> баланс!`;
             }
         }
-        
+
         let updated = await pool.query(
             'UPDATE users SET balance = $1, unlocked_avatars = $2, loot_boxes_owned = $3 WHERE id = $4 RETURNING *',
             [newBalance, unlockedAvatars, newLootBoxes, req.user.id]
         );
-        
+
         let userState = updated.rows[0];
         const currentAchievements = userState.unlocked_achievements || [];
         if (newBalance >= 50.00 && !currentAchievements.includes('millionaire')) {
@@ -738,7 +802,7 @@ app.post('/api/user/open-lootbox', async (req, res) => {
             const u = await pool.query('UPDATE users SET unlocked_achievements = $1 WHERE id = $2 RETURNING *', [achievements, req.user.id]);
             userState = u.rows[0];
         }
-        
+
         res.json({ success: true, rewardText, user: userState });
     } catch (err) {
         console.error(err);
@@ -751,8 +815,8 @@ app.post('/api/user/simulate-new-day', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     try {
         const updated = await pool.query(
-            'UPDATE users SET daily_quests = $1, last_spin_date = NULL WHERE id = $2 RETURNING *',
-            [JSON.stringify(buildDefaultQuests()), req.user.id]
+            'UPDATE users SET daily_quests = $1, daily_quests_date = $2, last_spin_date = NULL WHERE id = $3 RETURNING *',
+            [JSON.stringify(buildDefaultQuests()), getDailyQuestDateKey(), req.user.id]
         );
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
@@ -768,23 +832,23 @@ app.post('/api/user/reset-state', async (req, res) => {
         // Clear history & won prizes
         await pool.query('DELETE FROM wallet_history WHERE user_id = $1', [req.user.id]);
         await pool.query('DELETE FROM won_prizes WHERE user_id = $1', [req.user.id]);
-        
+
         // Reset user columns
         const updated = await pool.query(
-            `UPDATE users SET balance = 100.00, xp = 0, clan_id = NULL, active_avatar = '👤', 
-             active_theme = 'default', unlocked_avatars = ARRAY['👤'], unlocked_themes = ARRAY['default'], 
-             loot_boxes_owned = 0, unlocked_achievements = ARRAY[]::TEXT[], daily_quests = $1,
-             fullname = NULL, city = NULL, address = NULL, verified = FALSE, last_spin_date = NULL 
-             WHERE id = $2 RETURNING *`,
-            [JSON.stringify(buildDefaultQuests()), req.user.id]
+            `UPDATE users SET balance = 100.00, xp = 0, clan_id = NULL, active_avatar = '👤',
+             active_theme = 'default', unlocked_avatars = ARRAY['👤'], unlocked_themes = ARRAY['default'],
+             loot_boxes_owned = 0, unlocked_achievements = ARRAY[]::TEXT[], daily_quests = $1, daily_quests_date = $2,
+             fullname = NULL, city = NULL, address = NULL, verified = FALSE, last_spin_date = NULL
+             WHERE id = $3 RETURNING *`,
+            [JSON.stringify(buildDefaultQuests()), getDailyQuestDateKey(), req.user.id]
         );
-        
+
         // Add default transaction
         await pool.query(
             'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
             [req.user.id, "Начален бонус (Демо)", 100.00, "deposit"]
         );
-        
+
         res.json({ success: true, user: updated.rows[0] });
     } catch (err) {
         console.error(err);
@@ -808,29 +872,29 @@ app.post('/api/lobbies/join', async (req, res) => {
     const { lobbyId } = req.body;
     const isPractice = req.body.isPractice === true || req.body.isPractice === 'true';
     if (!lobbyId) return res.status(400).json({ error: "Missing lobbyId" });
-    
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        
+
         const result = await client.query('SELECT * FROM lobbies WHERE id = $1 FOR UPDATE', [lobbyId]);
         if (result.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: "Lobby not found" });
         }
-        
+
         const lobby = result.rows[0];
         const ticketPrice = parseFloat(lobby.ticket_price);
-        
+
         let userState = req.user;
         if (req.user) {
             const userResult = await client.query('SELECT * FROM users WHERE id = $1 FOR UPDATE', [req.user.id]);
             userState = userResult.rows[0];
         }
-        
+
         let newBalance = userState ? parseFloat(userState.balance) : 0;
         let newLootBoxes = userState ? userState.loot_boxes_owned : 0;
-        
+
         if (!isPractice && userState) {
             if (newBalance < ticketPrice) {
                 await client.query('ROLLBACK');
@@ -838,21 +902,21 @@ app.post('/api/lobbies/join', async (req, res) => {
             }
             newBalance -= ticketPrice;
             newLootBoxes += 1;
-            
+
             // Deduct balance
             await client.query('UPDATE users SET balance = $1, loot_boxes_owned = $2 WHERE id = $3', [newBalance, newLootBoxes, userState.id]);
-            
+
             // Add wallet entry
             await client.query(
                 'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
                 [userState.id, `Вход за турнир: ${lobby.prize_name}`, -ticketPrice, "withdrawal"]
             );
         }
-        
+
         // Add user to players list in lobby
         const players = typeof lobby.players === 'string' ? JSON.parse(lobby.players) : lobby.players || [];
         const isMeAlreadyJoined = players.some(p => p.isMe);
-        
+
         if (!isMeAlreadyJoined) {
             players.push({
                 name: "Вие (Участник)",
@@ -862,19 +926,19 @@ app.post('/api/lobbies/join', async (req, res) => {
                 finished: false
             });
         }
-        
+
         if (players.length > lobby.max_players) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: "Lobby is full" });
         }
-        
+
         const updatedLobby = await client.query(
             'UPDATE lobbies SET players = $1, status = $2, is_practice = $3 WHERE id = $4 RETURNING *',
             [JSON.stringify(players), 'playing', isPractice, lobbyId]
         );
-        
+
         await client.query('COMMIT');
-        
+
         res.json({
             success: true,
             lobby: updatedLobby.rows[0],
@@ -895,10 +959,10 @@ app.post('/api/lobbies/bot-join', async (req, res) => {
     try {
         const result = await pool.query('SELECT * FROM lobbies WHERE id = $1', [lobbyId]);
         if (result.rows.length === 0) return res.status(404).json({ error: "Lobby not found" });
-        
+
         const lobby = result.rows[0];
         const players = typeof lobby.players === 'string' ? JSON.parse(lobby.players) : lobby.players || [];
-        
+
         if (players.length < lobby.max_players) {
             players.push({
                 name: botName,
@@ -908,7 +972,7 @@ app.post('/api/lobbies/bot-join', async (req, res) => {
                 finished: false
             });
         }
-        
+
         const updated = await pool.query(
             'UPDATE lobbies SET players = $1 WHERE id = $2 RETURNING *',
             [JSON.stringify(players), lobbyId]
@@ -925,18 +989,18 @@ app.post('/api/lobbies/create-duel', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const { gameType, entryFee } = req.body;
     const isPractice = req.body.isPractice === true || req.body.isPractice === 'true';
-    
+
     try {
         const bet = parseFloat(entryFee);
         const prizeValue = bet * 1.8;
-        
+
         let newBalance = parseFloat(req.user.balance);
         if (!isPractice) {
             if (newBalance < bet) {
                 return res.status(400).json({ error: "Insufficient balance" });
             }
             newBalance -= bet;
-            
+
             // Deduct
             await pool.query('UPDATE users SET balance = $1 WHERE id = $2', [newBalance, req.user.id]);
             await pool.query(
@@ -944,10 +1008,10 @@ app.post('/api/lobbies/create-duel', async (req, res) => {
                 [req.user.id, `Создаване на стая за Частен дуел`, -bet, "withdrawal"]
             );
         }
-        
+
         // Create new dynamic duel lobby
         const result = await pool.query(
-            `INSERT INTO lobbies (prize_name, prize_value, ticket_price, max_players, product_type, game_type, image, status, players, is_friend_duel, is_practice) 
+            `INSERT INTO lobbies (prize_name, prize_value, ticket_price, max_players, product_type, game_type, image, status, players, is_friend_duel, is_practice)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, $10) RETURNING *`,
             [
                 `Частен дуел (${gameType})`,
@@ -962,7 +1026,7 @@ app.post('/api/lobbies/create-duel', async (req, res) => {
                 isPractice
             ]
         );
-        
+
         res.json({
             success: true,
             lobby: result.rows[0],
@@ -978,14 +1042,14 @@ app.post('/api/lobbies/create-duel', async (req, res) => {
 app.post('/api/lobbies/finish', async (req, res) => {
     const { lobbyId, finalTime, errors } = req.body;
     if (!lobbyId) return res.status(400).json({ error: "Missing lobbyId" });
-    
+
     try {
         const result = await pool.query('SELECT * FROM lobbies WHERE id = $1', [lobbyId]);
         if (result.rows.length === 0) return res.status(404).json({ error: "Lobby not found" });
-        
+
         const lobby = result.rows[0];
         let players = typeof lobby.players === 'string' ? JSON.parse(lobby.players) : lobby.players || [];
-        
+
         // 1. Submit my results
         const me = players.find(p => p.isMe);
         if (me) {
@@ -993,7 +1057,7 @@ app.post('/api/lobbies/finish', async (req, res) => {
             me.errors = parseInt(errors);
             me.finished = true;
         }
-        
+
         // 2. Simulate bot times
         players.forEach(p => {
             if (!p.isMe) {
@@ -1005,19 +1069,19 @@ app.post('/api/lobbies/finish', async (req, res) => {
                 p.finished = true;
             }
         });
-        
+
         // Sort players by time
         const sorted = [...players].sort((a, b) => a.time - b.time);
         const winnerName = sorted[0].name === "Вие (Участник)" ? "Вие" : sorted[0].name;
-        
+
         const completedAtText = getFormattedDate();
         const archiveId = Date.now();
         const isPracticeGame = lobby.is_practice;
         const isDuelGame = lobby.is_friend_duel;
-        
+
         // 3. Save completed game
         await pool.query(
-            `INSERT INTO completed_games (lobby_id, prize_name, prize_value, ticket_price, max_players, winner, completed_at, players, is_practice, is_friend_duel, archive_id, product_url, product_type, image, delivery_status) 
+            `INSERT INTO completed_games (lobby_id, prize_name, prize_value, ticket_price, max_players, winner, completed_at, players, is_practice, is_friend_duel, archive_id, product_url, product_type, image, delivery_status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
             [
                 lobby.id,
@@ -1037,16 +1101,16 @@ app.post('/api/lobbies/finish', async (req, res) => {
                 isDuelGame ? 'pending' : (winnerName === 'Вие' ? 'pending' : 'pending')
             ]
         );
-        
+
         // 4. Update user state (if verified/authorized)
         let userState = req.user;
         if (userState && me) {
             let xpGained = 0;
             let balanceCredit = 0;
-            
+
             let quests = typeof userState.daily_quests === 'string' ? JSON.parse(userState.daily_quests) : userState.daily_quests;
             if (!quests || quests.length === 0) quests = buildDefaultQuests();
-            
+
             if (isPracticeGame) {
                 xpGained = 10;
                 // Increment practice quest
@@ -1065,11 +1129,11 @@ app.post('/api/lobbies/finish', async (req, res) => {
                     if (q && !q.claimed) q.current = Math.min(q.target, q.current + 1);
                 }
             }
-            
+
             // Adjust balances
             const newXP = userState.xp + xpGained;
             let newBalance = parseFloat(userState.balance);
-            
+
             if (balanceCredit > 0) {
                 newBalance += balanceCredit;
                 await pool.query(
@@ -1077,7 +1141,7 @@ app.post('/api/lobbies/finish', async (req, res) => {
                     [userState.id, `Спечелен Частен дуел (${lobby.prize_name}) 🏆`, balanceCredit, "deposit"]
                 );
             }
-            
+
             // Unlocks Achievements Checks
             let achievements = Array.isArray(userState.unlocked_achievements) ? [...userState.unlocked_achievements] : [];
             if (winnerName === "Вие" && !isPracticeGame) {
@@ -1093,35 +1157,35 @@ app.post('/api/lobbies/finish', async (req, res) => {
             if (newBalance >= 50.00 && !achievements.includes('millionaire')) {
                 achievements.push('millionaire');
             }
-            
+
             // Save Material Prize to won_prizes if I won a tournament
             if (winnerName === "Вие" && !isPracticeGame && !isDuelGame) {
                 await pool.query(
-                    `INSERT INTO won_prizes (user_id, prize_name, prize_value, delivery_status, archive_id) 
+                    `INSERT INTO won_prizes (user_id, prize_name, prize_value, delivery_status, archive_id)
                      VALUES ($1, $2, $3, 'pending', $4)`,
                     [userState.id, lobby.prize_name, lobby.prize_value, archiveId]
                 );
             }
-            
+
             // ---------------- STREAK LOGIC ---------------- //
             let currentStreak = parseInt(userState.streak_count) || 0;
             let lastPlayed = userState.last_played_date;
-            
+
             if (!isPracticeGame && me) {
                 const todayStr = new Date().toDateString();
                 if (lastPlayed !== todayStr) {
                     const yesterday = new Date();
                     yesterday.setDate(yesterday.getDate() - 1);
                     const yesterdayStr = yesterday.toDateString();
-                    
+
                     if (lastPlayed === yesterdayStr) {
                         currentStreak += 1;
                     } else {
                         currentStreak = 1; // reset streak
                     }
-                    
+
                     lastPlayed = todayStr;
-                    
+
                     // Streak reward every 7 days
                     if (currentStreak > 0 && currentStreak % 7 === 0) {
                         newBalance += 2.00;
@@ -1136,18 +1200,18 @@ app.post('/api/lobbies/finish', async (req, res) => {
 
             // Update User DB
             const userUpdated = await pool.query(
-                `UPDATE users SET balance = $1, xp = $2, unlocked_achievements = $3, daily_quests = $4, last_played_date = $5, streak_count = $6 
+                `UPDATE users SET balance = $1, xp = $2, unlocked_achievements = $3, daily_quests = $4, last_played_date = $5, streak_count = $6
                  WHERE id = $7 RETURNING *`,
                 [newBalance, newXP, achievements, JSON.stringify(quests), lastPlayed, currentStreak, userState.id]
             );
             userState = userUpdated.rows[0];
-            
+
             // Add XP to user's clan if they have one
             if (userState.clan_id && xpGained > 0) {
                 await pool.query('UPDATE clans SET xp = xp + $1 WHERE id = $2', [xpGained, userState.clan_id]);
             }
         }
-        
+
         // 5. Clean up/Reset active lobby state
         if (isDuelGame) {
             // Delete friend duel room
@@ -1165,7 +1229,7 @@ app.post('/api/lobbies/finish', async (req, res) => {
                 [JSON.stringify(freshPlayers), 'waiting', lobby.id]
             );
         }
-        
+
         res.json({
             success: true,
             winner: winnerName,
@@ -1183,7 +1247,7 @@ app.get('/api/clans', async (req, res) => {
     try {
         const currentUserId = req.user ? req.user.id : null;
         const result = await pool.query(`
-            SELECT c.*, 
+            SELECT c.*,
                    COUNT(u.id)::INTEGER as member_count,
                    COALESCE(
                        json_agg(
@@ -1216,41 +1280,41 @@ app.post('/api/clans/create', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     const icon = typeof req.body.icon === 'string' && req.body.icon.trim() ? req.body.icon.trim().slice(0, 10) : '🛡️';
-    
+
     if (req.user.clan_id) {
         return res.status(400).json({ error: "Вече сте в клан. Напуснете текущия клан, за да създадете нов." });
     }
     if (name.length < 3 || name.length > 40) {
         return res.status(400).json({ error: "Името на клана трябва да е между 3 и 40 символа." });
     }
-    
+
     if (parseFloat(req.user.balance) < 2.00) {
         return res.status(400).json({ error: "Недостатъчен баланс (€2.00) за създаване на клан." });
     }
 
     try {
         await pool.query('BEGIN');
-        
+
         // Create clan
         const newClan = await pool.query(
             'INSERT INTO clans (name, icon, creator_id) VALUES ($1, $2, $3) RETURNING *',
             [name, icon, req.user.id]
         );
         const clanId = newClan.rows[0].id;
-        
+
         // Deduct balance and set user clan
         const newBalance = parseFloat(req.user.balance) - 2.00;
         const updatedUser = await pool.query(
             'UPDATE users SET balance = $1, clan_id = $2 WHERE id = $3 RETURNING *',
             [newBalance, clanId, req.user.id]
         );
-        
+
         // Log transaction
         await pool.query(
             'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
             [req.user.id, `Създаване на клан (${name})`, -2.00, "withdrawal"]
         );
-        
+
         await pool.query('COMMIT');
         res.json({ success: true, user: updatedUser.rows[0], clan: newClan.rows[0] });
     } catch (err) {
@@ -1270,11 +1334,11 @@ app.post('/api/user/join-clan', async (req, res) => {
     const parsedClanId = parseInt(clanId, 10);
     if (!parsedClanId) return res.status(400).json({ error: "Невалиден клан." });
     if (req.user.clan_id === parsedClanId) return res.status(400).json({ error: "Вече сте в този клан." });
-    
+
     try {
         const clanCheck = await pool.query('SELECT * FROM clans WHERE id = $1', [parsedClanId]);
         if (clanCheck.rows.length === 0) return res.status(404).json({ error: "Кланът не съществува." });
-        
+
         const memberCount = await pool.query('SELECT COUNT(*)::INTEGER as count FROM users WHERE clan_id = $1', [parsedClanId]);
         if (memberCount.rows[0].count >= 5) {
             return res.status(400).json({ error: "Кланът вече има максималните 5 членове." });
@@ -1303,15 +1367,15 @@ app.post('/api/user/leave-clan', async (req, res) => {
 // POST /api/user/simulate-spin
 app.post('/api/user/simulate-spin', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    
+
     try {
         let quests = typeof req.user.daily_quests === 'string' ? JSON.parse(req.user.daily_quests) : req.user.daily_quests;
         if (!quests || quests.length === 0) quests = buildDefaultQuests();
-        
+
         // Increment spin quest
         const q = quests.find(item => item.id === 'spin');
         if (q && !q.claimed) q.current = Math.min(q.target, q.current + 1);
-        
+
         const updated = await pool.query(
             'UPDATE users SET daily_quests = $1 WHERE id = $2 RETURNING *',
             [JSON.stringify(quests), req.user.id]
@@ -1327,11 +1391,11 @@ app.post('/api/user/simulate-spin', async (req, res) => {
 app.post('/api/user/lucky-spin', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
     const { rewardType, rewardVal, rewardName, spinDate } = req.body;
-    
+
     try {
         let newBalance = parseFloat(req.user.balance);
         let lastSpinDate = req.user.last_spin_date;
-        
+
         if (rewardType === 'cash') {
             newBalance += parseFloat(rewardVal);
             await pool.query(
@@ -1346,20 +1410,20 @@ app.post('/api/user/lucky-spin', async (req, res) => {
             );
             lastSpinDate = spinDate;
         }
-        
+
         // Update quest
         let quests = typeof req.user.daily_quests === 'string' ? JSON.parse(req.user.daily_quests) : req.user.daily_quests;
         if (!quests || quests.length === 0) quests = buildDefaultQuests();
         const q = quests.find(item => item.id === 'spin');
         if (q && !q.claimed) q.current = Math.min(q.target, q.current + 1);
-        
+
         let achievements = Array.isArray(req.user.unlocked_achievements) ? [...req.user.unlocked_achievements] : [];
         if (newBalance >= 50.00 && !achievements.includes('millionaire')) {
             achievements.push('millionaire');
         }
-        
+
         const updated = await pool.query(
-            `UPDATE users SET balance = $1, last_spin_date = $2, daily_quests = $3, unlocked_achievements = $4 
+            `UPDATE users SET balance = $1, last_spin_date = $2, daily_quests = $3, unlocked_achievements = $4
              WHERE id = $5 RETURNING *`,
             [newBalance, lastSpinDate, JSON.stringify(quests), achievements, req.user.id]
         );
@@ -1387,9 +1451,9 @@ app.post('/api/admin/create-lobby', requireAdmin, async (req, res) => {
                 finished: false
             });
         }
-        
+
         const result = await pool.query(
-            `INSERT INTO lobbies (prize_name, prize_value, ticket_price, max_players, product_type, game_type, image, product_url, status, players) 
+            `INSERT INTO lobbies (prize_name, prize_value, ticket_price, max_players, product_type, game_type, image, product_url, status, players)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'waiting', $9) RETURNING *`,
             [prizeName, prizeValue, ticketPrice, maxPlayers, productType, gameType, image, productUrl, JSON.stringify(initialPlayers)]
         );
@@ -1421,12 +1485,12 @@ app.post('/api/admin/reset-all', requireAdmin, async (req, res) => {
         await pool.query('DELETE FROM completed_games');
         await pool.query('DELETE FROM lobbies');
         await pool.query('DELETE FROM users');
-        
+
         // Reseed default lobbies
         const sqlPath = path.join(__dirname, 'database.sql');
         const sql = fs.readFileSync(sqlPath, 'utf8');
         await pool.query(sql);
-        
+
         res.json({ success: true });
     } catch (err) {
         console.error(err);
@@ -1468,7 +1532,7 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
     if (!amount || !paymentIntentId) {
         return res.status(400).json({ error: "Липсва информация за плащането." });
     }
-    
+
     try {
         const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
         const expectedAmount = Math.round(amount * 100);
@@ -1480,12 +1544,12 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
         ) {
             return res.status(400).json({ error: "Плащането не е потвърдено от Stripe." });
         }
-        
+
         const client = await pool.connect();
-        
+
         try {
             await client.query('BEGIN');
-            
+
             const existing = await client.query(
                 'SELECT id FROM wallet_history WHERE stripe_payment_intent_id = $1',
                 [paymentIntentId]
@@ -1495,13 +1559,13 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
                 const updatedUser = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
                 return res.json({ success: true, user: updatedUser.rows[0], alreadyConfirmed: true });
             }
-            
+
             await client.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [amount, req.user.id]);
             await client.query(
                 'INSERT INTO wallet_history (user_id, description, amount, type, stripe_payment_intent_id) VALUES ($1, $2, $3, $4, $5)',
                 [req.user.id, `Депозит чрез Stripe`, amount, "deposit", paymentIntentId]
             );
-            
+
             // Referral Bonus Logic
             if (amount >= 10 && req.user.referred_by && !req.user.referral_bonus_paid) {
                 // Give 5 eur to the new user
@@ -1510,7 +1574,7 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
                     'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
                     [req.user.id, "Реферален бонус (Ти използва код)", 5.00, "deposit"]
                 );
-                
+
                 // Give 5 eur to the referrer
                 await client.query('UPDATE users SET balance = balance + 5 WHERE id = $1', [req.user.referred_by]);
                 await client.query(
@@ -1518,7 +1582,7 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
                     [req.user.referred_by, `Реферален бонус (Поканен приятел депозира)`, 5.00, "deposit"]
                 );
             }
-            
+
             await client.query('COMMIT');
         } catch (err) {
             await client.query('ROLLBACK');
@@ -1526,7 +1590,7 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
         } finally {
             client.release();
         }
-        
+
         const updatedUser = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
         res.json({ success: true, user: updatedUser.rows[0] });
     } catch (err) {
@@ -1538,7 +1602,7 @@ app.post('/api/payment/confirm-deposit', async (req, res) => {
 app.post('/api/payment/withdraw', async (req, res) => {
     if (!req.user) return res.status(401).json({ error: "Неоторизиран достъп" });
     const { amount, iban } = req.body;
-    
+
     if (!amount || amount < 20) return res.status(400).json({ error: "Минималната сума за теглене е €20.00" });
     if (!iban || iban.trim().length < 10) return res.status(400).json({ error: "Моля, въведете валиден IBAN." });
 
@@ -1549,13 +1613,13 @@ app.post('/api/payment/withdraw', async (req, res) => {
     try {
         // Subtract from balance immediately
         await pool.query('UPDATE users SET balance = balance - $1 WHERE id = $2', [amount, req.user.id]);
-        
+
         // Insert withdrawal request
         await pool.query(
             'INSERT INTO withdrawals (user_id, amount, status, iban) VALUES ($1, $2, $3, $4)',
             [req.user.id, amount, 'pending', iban]
         );
-        
+
         // Insert wallet history
         await pool.query(
             'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
@@ -1585,9 +1649,9 @@ app.get('/api/user/withdrawals', async (req, res) => {
 app.get('/api/admin/withdrawals', requireAdmin, async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT w.*, u.fullname, u.email, u.phone 
-            FROM withdrawals w 
-            JOIN users u ON w.user_id = u.id 
+            SELECT w.*, u.fullname, u.email, u.phone
+            FROM withdrawals w
+            JOIN users u ON w.user_id = u.id
             ORDER BY w.created_at DESC
         `);
         res.json({ success: true, withdrawals: result.rows });
@@ -1612,7 +1676,7 @@ app.post('/api/admin/withdrawal/reject', requireAdmin, async (req, res) => {
     try {
         const wResult = await pool.query("SELECT * FROM withdrawals WHERE id = $1", [id]);
         if (wResult.rows.length === 0) return res.status(404).json({ error: "Not found" });
-        
+
         const w = wResult.rows[0];
         if (w.status !== 'pending') return res.status(400).json({ error: "Already processed" });
 
@@ -1634,9 +1698,9 @@ app.post('/api/admin/withdrawal/reject', requireAdmin, async (req, res) => {
 app.get('/api/leaderboard', async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT id, fullname, xp, active_avatar 
-            FROM users 
-            ORDER BY xp DESC 
+            SELECT id, fullname, xp, active_avatar
+            FROM users
+            ORDER BY xp DESC
             LIMIT 50
         `);
         res.json({ success: true, leaderboard: result.rows, serverTime: Date.now() });
@@ -1655,45 +1719,45 @@ setInterval(async () => {
         const day = now.getDay(); // 0 is Sunday
         const hours = now.getHours();
         const minutes = now.getMinutes();
-        
+
         if (day === 0 && hours === 23 && minutes >= 55) {
             const currentWeek = now.toISOString().substring(0, 10);
             if (lastResetWeek !== currentWeek) {
                 console.log("🏆 SEASON ENDED! Distributing rewards and resetting XP...");
                 lastResetWeek = currentWeek;
-                
+
                 const top10 = await pool.query('SELECT id, xp FROM users ORDER BY xp DESC LIMIT 10');
-                
+
                 for (let i = 0; i < top10.rows.length; i++) {
                     const player = top10.rows[i];
-                    if (player.xp === 0) continue; 
-                    
+                    if (player.xp === 0) continue;
+
                     let reward = 0;
                     if (i === 0) reward = 20.00;
                     else if (i === 1) reward = 10.00;
                     else reward = 5.00;
-                    
+
                     await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [reward, player.id]);
                     await pool.query(
                         'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
                         [player.id, `🏆 Награда от Сезона (Място ${i+1})`, reward, "deposit"]
                     );
                 }
-                
+
                 // Reset XP
                 await pool.query('UPDATE users SET xp = 0');
-                
+
                 // Clan Rewards
                 const topClans = await pool.query('SELECT id, xp FROM clans ORDER BY xp DESC LIMIT 3');
                 for (let i = 0; i < topClans.rows.length; i++) {
                     const clan = topClans.rows[i];
                     if (clan.xp === 0) continue;
-                    
+
                     let clanReward = 0;
                     if (i === 0) clanReward = 30.00;
                     else if (i === 1) clanReward = 15.00;
                     else clanReward = 5.00;
-                    
+
                     // Distribute reward to clan members evenly
                     const members = await pool.query('SELECT id FROM users WHERE clan_id = $1', [clan.id]);
                     if (members.rows.length > 0) {
@@ -1707,7 +1771,7 @@ setInterval(async () => {
                         }
                     }
                 }
-                
+
                 // Reset Clan XP
                 await pool.query('UPDATE clans SET xp = 0');
                 console.log("✅ Season XP & Clan Wars Reset completed.");
@@ -1724,7 +1788,7 @@ setInterval(async () => {
 setInterval(async () => {
     try {
         const res = await pool.query(`
-            SELECT COUNT(*) FROM lobbies 
+            SELECT COUNT(*) FROM lobbies
             WHERE ticket_price = 0 AND is_practice = FALSE AND is_friend_duel = FALSE
         `);
         if (parseInt(res.rows[0].count) === 0) {
@@ -1734,15 +1798,15 @@ setInterval(async () => {
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             `;
             await pool.query(insertQuery, [
-                "Дневен Freeroll Бонус 💶", 
-                5.00, 
-                0.00, 
-                50, 
-                false, 
-                'waiting', 
-                JSON.stringify([]), 
-                null, 
-                null, 
+                "Дневен Freeroll Бонус 💶",
+                5.00,
+                0.00,
+                50,
+                false,
+                'waiting',
+                JSON.stringify([]),
+                null,
+                null,
                 'money'
             ]);
             console.log("Auto-created daily Freeroll tournament.");

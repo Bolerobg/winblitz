@@ -11,6 +11,24 @@ const DEFAULT_QUESTS = [
   { id: "win", desc: "Спечелете 1 Реална Игра", target: 1, current: 0, reward: 1.50, claimed: false }
 ];
 
+const cloneDefaultQuests = () => DEFAULT_QUESTS.map(quest => ({ ...quest }));
+
+const getDailyQuestDateKey = () => new Date().toLocaleDateString('bg-BG', {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+});
+
+const parseDailyQuests = (quests) => {
+  if (!quests) return cloneDefaultQuests();
+  try {
+    const parsed = typeof quests === 'string' ? JSON.parse(quests) : quests;
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : cloneDefaultQuests();
+  } catch (e) {
+    return cloneDefaultQuests();
+  }
+};
+
 const INITIAL_STATE = {
   authToken: null,
   balance: 100.00,
@@ -29,7 +47,8 @@ const INITIAL_STATE = {
   unlockedThemes: ["default"],
   lootBoxesOwned: 0,
   unlockedAchievements: [],
-  dailyQuests: DEFAULT_QUESTS,
+  dailyQuests: cloneDefaultQuests(),
+  dailyQuestDate: null,
   walletHistory: [
     { id: 1, desc: "Начален бонус (Демо)", amount: 100.00, type: "deposit", date: "Днес" }
   ],
@@ -87,7 +106,12 @@ export function AppProvider({ children }) {
         if (localData) {
           loadedState = { ...INITIAL_STATE, ...JSON.parse(localData) };
         }
-        
+        const todayQuestDate = getDailyQuestDateKey();
+        if (loadedState.dailyQuestDate !== todayQuestDate) {
+          loadedState.dailyQuests = cloneDefaultQuests();
+          loadedState.dailyQuestDate = todayQuestDate;
+        }
+
         // Sync with Backend if online
         const lobbiesRes = await fetch(`${BACKEND_URL}/api/lobbies`);
         if (lobbiesRes.ok) {
@@ -104,7 +128,7 @@ export function AppProvider({ children }) {
           } else {
             authHeaders['X-User-Phone'] = loadedState.user.phone;
           }
-          
+
           const userRes = await fetch(`${BACKEND_URL}/api/user/state`, {
             headers: authHeaders
           });
@@ -120,11 +144,12 @@ export function AppProvider({ children }) {
               loadedState.unlockedThemes = data.user.unlocked_themes || ['default'];
               loadedState.lootBoxesOwned = data.user.loot_boxes_owned || 0;
               loadedState.unlockedAchievements = data.user.unlocked_achievements || [];
-              loadedState.dailyQuests = typeof data.user.daily_quests === 'string' ? JSON.parse(data.user.daily_quests) : data.user.daily_quests || DEFAULT_QUESTS;
+              loadedState.dailyQuests = parseDailyQuests(data.user.daily_quests);
+              loadedState.dailyQuestDate = data.user.daily_quests_date || null;
               loadedState.walletHistory = data.walletHistory || [];
               loadedState.completedTournaments = (data.completedGames || []).map(mapLobbyToClient);
               loadedState.lastSpinDate = data.user.last_spin_date || null;
-              
+
               // Recalculate stats
               let played = 0;
               let won = 0;
@@ -138,7 +163,7 @@ export function AppProvider({ children }) {
                   }
                 }
               });
- 
+
               loadedState.user = {
                 email: data.user.email,
                 phone: data.user.phone,
@@ -155,7 +180,7 @@ export function AppProvider({ children }) {
             }
           }
         }
-        
+
         setState(loadedState);
       } catch (err) {
         console.warn("Backend sync failed on load, running offline mode:", err);
@@ -308,11 +333,16 @@ export function AppProvider({ children }) {
   };
 
   const triggerSync = async (authTokenOverride = state.authToken) => {
-    if (!authTokenOverride && !state.user?.email) return;
+    if (!authTokenOverride && !state.user?.email && !state.user?.phone) return;
     try {
-      const authHeaders = authTokenOverride
-        ? { Authorization: `Bearer ${authTokenOverride}` }
-        : { 'X-User-Email': state.user.email };
+      let authHeaders = {};
+      if (authTokenOverride) {
+        authHeaders = { Authorization: `Bearer ${authTokenOverride}` };
+      } else if (state.user?.email) {
+        authHeaders = { 'X-User-Email': state.user.email };
+      } else if (state.user?.phone) {
+        authHeaders = { 'X-User-Phone': state.user.phone };
+      }
       const userRes = await fetch(`${BACKEND_URL}/api/user/state`, {
         headers: authHeaders
       });
@@ -342,7 +372,8 @@ export function AppProvider({ children }) {
             unlockedThemes: data.user.unlocked_themes || ['default'],
             lootBoxesOwned: data.user.loot_boxes_owned || 0,
             unlockedAchievements: data.user.unlocked_achievements || [],
-            dailyQuests: typeof data.user.daily_quests === 'string' ? JSON.parse(data.user.daily_quests) : data.user.daily_quests || DEFAULT_QUESTS,
+            dailyQuests: parseDailyQuests(data.user.daily_quests),
+            dailyQuestDate: data.user.daily_quests_date || null,
             walletHistory: data.walletHistory || [],
             completedTournaments,
             lastSpinDate: data.user.last_spin_date || null,
@@ -353,6 +384,7 @@ export function AppProvider({ children }) {
               fullname: data.user.fullname,
               city: data.user.city,
               address: data.user.address,
+              promo_code: data.user.promo_code || prev.user?.promo_code,
               verified: data.user.verified,
               gamesPlayed: played,
               gamesWon: won,
@@ -419,7 +451,7 @@ export function AppProvider({ children }) {
         if (!players.some(p => p.isMe)) {
           players.push({ name: "Вие (Участник)", isMe: true, time: null, errors: 0, finished: false });
         }
-        
+
         const newHistory = isPractice ? prev.walletHistory : [
           { id: Date.now(), desc: `Вход за турнир: ${targetLobby.prizeName}`, amount: -targetLobby.ticketPrice, type: "withdrawal", date: "Днес" },
           ...prev.walletHistory
