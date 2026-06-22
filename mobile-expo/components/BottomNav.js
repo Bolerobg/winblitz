@@ -1,11 +1,8 @@
 import React from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, SafeAreaView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useApp } from '../context/AppContext';
 
 export default function BottomNav({ currentScreen, onSelectScreen }) {
-  const { state } = useApp();
-
   const tabs = [
     { key: 'Lobbies', name: 'Турнири', icon: 'trophy-outline', iconActive: 'trophy' },
     { key: 'History', name: 'История', icon: 'time-outline', iconActive: 'time' },
@@ -13,10 +10,6 @@ export default function BottomNav({ currentScreen, onSelectScreen }) {
     { key: 'LeagueClan', name: 'Лиги', icon: 'shield-outline', iconActive: 'shield' },
     { key: 'Profile', name: 'Профил', icon: 'person-outline', iconActive: 'person' },
   ];
-
-  if (state.role === 'admin') {
-    tabs.push({ key: 'Admin', name: 'Админ', icon: 'settings-outline', iconActive: 'settings' });
-  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
