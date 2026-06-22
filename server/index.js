@@ -1356,6 +1356,38 @@ app.post('/api/admin/withdrawal/reject', async (req, res) => {
     }
 });
 // ---------------------------------------------------
+// Automatic Freeroll Task
+// Checks every minute if there's an active Freeroll. If not, creates one.
+setInterval(async () => {
+    try {
+        const res = await pool.query(`
+            SELECT COUNT(*) FROM lobbies 
+            WHERE ticket_price = 0 AND is_practice = FALSE AND is_friend_duel = FALSE
+        `);
+        if (parseInt(res.rows[0].count) === 0) {
+            console.log("No active Freeroll found. Creating a new one...");
+            const insertQuery = `
+                INSERT INTO lobbies (prize_name, prize_value, ticket_price, max_players, is_practice, status, players, image, product_url, product_type)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            `;
+            await pool.query(insertQuery, [
+                "Дневен Freeroll Бонус 💶", 
+                5.00, 
+                0.00, 
+                50, 
+                false, 
+                'waiting', 
+                JSON.stringify([]), 
+                null, 
+                null, 
+                'money'
+            ]);
+            console.log("Auto-created daily Freeroll tournament.");
+        }
+    } catch (err) {
+        console.error("Auto Freeroll Task Error:", err);
+    }
+}, 60 * 1000); // Check every 60 seconds
 
 // Serve frontend static files
 app.use(express.static(path.join(__dirname, '..')));
