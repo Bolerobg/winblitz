@@ -1387,6 +1387,67 @@ app.post('/api/admin/withdrawal/reject', async (req, res) => {
     }
 });
 // ---------------------------------------------------
+// Leagues and Seasons Leaderboard
+app.get('/api/leaderboard', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT id, fullname, xp, active_avatar 
+            FROM users 
+            ORDER BY xp DESC 
+            LIMIT 50
+        `);
+        res.json({ success: true, leaderboard: result.rows, serverTime: Date.now() });
+    } catch (err) {
+        console.error("Leaderboard error:", err);
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+// Automatic Season Reset Task
+// Resets XP every Sunday at 23:55
+let lastResetWeek = null;
+setInterval(async () => {
+    try {
+        const now = new Date();
+        const day = now.getDay(); // 0 is Sunday
+        const hours = now.getHours();
+        const minutes = now.getMinutes();
+        
+        if (day === 0 && hours === 23 && minutes >= 55) {
+            const currentWeek = now.toISOString().substring(0, 10);
+            if (lastResetWeek !== currentWeek) {
+                console.log("🏆 SEASON ENDED! Distributing rewards and resetting XP...");
+                lastResetWeek = currentWeek;
+                
+                const top10 = await pool.query('SELECT id, xp FROM users ORDER BY xp DESC LIMIT 10');
+                
+                for (let i = 0; i < top10.rows.length; i++) {
+                    const player = top10.rows[i];
+                    if (player.xp === 0) continue; 
+                    
+                    let reward = 0;
+                    if (i === 0) reward = 20.00;
+                    else if (i === 1) reward = 10.00;
+                    else reward = 5.00;
+                    
+                    await pool.query('UPDATE users SET balance = balance + $1 WHERE id = $2', [reward, player.id]);
+                    await pool.query(
+                        'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+                        [player.id, `🏆 Награда от Сезона (Място ${i+1})`, reward, "deposit"]
+                    );
+                }
+                
+                // Reset XP
+                await pool.query('UPDATE users SET xp = 0');
+                console.log("✅ Season XP Reset completed.");
+            }
+        }
+    } catch (err) {
+        console.error("Season Reset Task Error:", err);
+    }
+}, 60 * 1000);
+
+// ---------------------------------------------------
 // Automatic Freeroll Task
 // Checks every minute if there's an active Freeroll. If not, creates one.
 setInterval(async () => {

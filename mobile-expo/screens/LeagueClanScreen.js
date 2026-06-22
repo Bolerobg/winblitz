@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, View, Text, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useApp } from '../context/AppContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,26 +9,77 @@ const CLANS_DATA = {
   3: { name: "Томбола Мастърс", icon: "🏆", xp: 15400, members: ["Елена Г.", "Стефан Р.", "Мария Г.", "Лилия Б."] }
 };
 
-const BOT_LEAGUE_PLAYERS = [
-  { name: "Мартин С.", xp: 3200, avatar: "👑" },
-  { name: "Стефан Р.", xp: 1200, avatar: "🥇" },
-  { name: "Теодора А.", xp: 850, avatar: "🥈" },
-  { name: "Мария Г.", xp: 200, avatar: "🥉" }
-];
+const getLeagueInfo = (xp) => {
+    if (xp >= 15000) return { name: "Диамант", badge: "💎", color: "#67e8f9", bg: "rgba(103, 232, 249, 0.1)" };
+    if (xp >= 5000) return { name: "Злато", badge: "🥇", color: "#fbbf24", bg: "rgba(251, 191, 36, 0.1)" };
+    if (xp >= 1000) return { name: "Сребро", badge: "🥈", color: "#9ca3af", bg: "rgba(156, 163, 175, 0.1)" };
+    return { name: "Бронз", badge: "🥉", color: "#d4d4d8", bg: "transparent" };
+};
 
 export default function LeagueClanScreen() {
   const { state, updateState, apiFetch, triggerSync } = useApp();
   const [tab, setTab] = useState('league'); // 'league' or 'clan'
   const [loading, setLoading] = useState(false);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [timeLeft, setTimeLeft] = useState('...');
+
+  useEffect(() => {
+    fetchLeaderboard();
+    const timer = setInterval(() => {
+      setTimeLeft(getRemainingTime());
+    }, 60000);
+    setTimeLeft(getRemainingTime());
+    return () => clearInterval(timer);
+  }, []);
+
+  const getRemainingTime = () => {
+    const now = new Date();
+    const daysUntilSunday = now.getDay() === 0 ? 0 : 7 - now.getDay();
+    const target = new Date();
+    target.setDate(now.getDate() + daysUntilSunday);
+    target.setHours(23, 55, 0, 0);
+    
+    if (now > target) target.setDate(target.getDate() + 7);
+    
+    const diff = target - now;
+    const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+    const m = Math.floor((diff / 1000 / 60) % 60);
+    return `${d}д ${h}ч ${m}м`;
+  };
+
+  const fetchLeaderboard = async () => {
+    try {
+      const res = await apiFetch('/api/leaderboard');
+      if (res.ok) {
+        const data = await res.json();
+        setLeaderboard(data.leaderboard);
+      }
+    } catch (e) {
+      console.log("Failed to fetch leaderboard");
+    }
+  };
 
   // --- League Tab Calculations ---
-  const myPlayer = { 
-    name: state.user.fullname ? `${state.user.fullname} (Вие)` : "Вие", 
-    xp: state.xp, 
-    avatar: state.activeAvatar || "👤",
-    isMe: true
-  };
-  const leaguePlayers = [...BOT_LEAGUE_PLAYERS, myPlayer].sort((a, b) => b.xp - a.xp);
+  // --- League Tab Calculations ---
+  // Ensure "me" is in the list if not already there, or just mark me
+  let displayPlayers = [...leaderboard];
+  const myIndex = displayPlayers.findIndex(p => p.id === state.user?.id);
+  
+  if (myIndex === -1 && state.user) {
+    displayPlayers.push({
+      id: state.user.id,
+      fullname: state.user.fullname || "Вие",
+      xp: state.xp,
+      active_avatar: state.activeAvatar || "👤",
+      isMe: true
+    });
+  } else if (myIndex !== -1) {
+    displayPlayers[myIndex].isMe = true;
+    displayPlayers[myIndex].fullname = displayPlayers[myIndex].fullname ? `${displayPlayers[myIndex].fullname} (Вие)` : "Вие";
+  }
+  
+  displayPlayers.sort((a, b) => b.xp - a.xp);
 
   // --- Clan Join / Leave Actions ---
   const handleJoinClan = async (clanId) => {
@@ -116,15 +167,24 @@ export default function LeagueClanScreen() {
       {/* --- LEAGUE VIEW --- */}
       {tab === 'league' && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🏆 Седмично класиране в Лигата</Text>
-          <Text style={styles.sectionDesc}>Печелете точки XP в турнирите, за да се изкачите по-напред и да вземете ранг награди.</Text>
+          <View style={styles.seasonHeader}>
+            <View style={{flex: 1}}>
+              <Text style={styles.sectionTitle}>🏆 Седмично класиране</Text>
+              <Text style={styles.sectionDesc}>Печелете XP, за да вземете награди.</Text>
+            </View>
+            <View style={styles.timerBadge}>
+              <Ionicons name="time-outline" size={14} color="#fca5a5" style={{marginRight: 4}} />
+              <Text style={styles.timerText}>{timeLeft}</Text>
+            </View>
+          </View>
 
           <View style={styles.listCard}>
-            {leaguePlayers.map((player, index) => {
+            {displayPlayers.map((player, index) => {
               const medal = index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : `${index + 1}.`;
+              const league = getLeagueInfo(player.xp);
               return (
                 <View 
-                  key={player.name} 
+                  key={player.id || player.name} 
                   style={[
                     styles.rankItem, 
                     player.isMe && styles.rankItemMe,
@@ -132,8 +192,15 @@ export default function LeagueClanScreen() {
                   ]}
                 >
                   <Text style={styles.rankIndex}>{medal}</Text>
-                  <Text style={styles.rankAvatar}>{player.avatar}</Text>
-                  <Text style={[styles.rankName, player.isMe && styles.rankNameMe]}>{player.name}</Text>
+                  <Text style={styles.rankAvatar}>{player.active_avatar || player.avatar || "👤"}</Text>
+                  
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.rankName, player.isMe && styles.rankNameMe]}>{player.fullname || player.name}</Text>
+                    <View style={[styles.leaguePill, { backgroundColor: league.bg }]}>
+                      <Text style={[styles.leaguePillText, { color: league.color }]}>{league.badge} {league.name}</Text>
+                    </View>
+                  </View>
+                  
                   <Text style={styles.rankXp}>{player.xp} XP</Text>
                 </View>
               );
@@ -514,5 +581,37 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 100,
+  },
+  seasonHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  timerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(252, 165, 165, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(252, 165, 165, 0.3)',
+  },
+  timerText: {
+    color: '#fca5a5',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  leaguePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  leaguePillText: {
+    fontSize: 9,
+    fontWeight: '800',
   }
 });
