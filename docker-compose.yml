@@ -27,12 +27,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/winblitz?sslmode=disable
       - PORT=3005
-      - SMTP_HOST=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_SECURE=false
-      - SMTP_USER=your_email@gmail.com
-      - SMTP_PASS=your_google_app_password
-      - SMTP_FROM="WinBlitz ⚡" <your_email@gmail.com>
+    env_file:
+      - .env
 
 volumes:
   postgres_data:
