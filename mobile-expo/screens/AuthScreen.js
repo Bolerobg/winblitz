@@ -16,112 +16,67 @@ import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 
 export default function AuthScreen() {
-  const { checkEmail, registerEmail, verifyEmailCode } = useApp();
+  const { loginPassword, registerPassword } = useApp();
 
-  // Step state: 'email' | 'register' | 'verify'
-  const [step, setStep] = useState('email');
+  const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   
   // Registration form fields
   const [fullname, setFullname] = useState('');
   const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
   
-  // Verification code fields
-  const [code, setCode] = useState('');
-  const [simulatedCode, setSimulatedCode] = useState('');
-  const [isNewUser, setIsNewUser] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Email format validation
   const validateEmail = (text) => {
     const reg = /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w\w+)+$/;
     return reg.test(text);
   };
 
-  const handleNextStep = async () => {
+  const handleLogin = async () => {
     if (!email || !validateEmail(email)) {
       Alert.alert("Грешка", "Моля въведете валиден имейл адрес!");
       return;
     }
-
-    setLoading(true);
-    const checkRes = await checkEmail(email);
-    setLoading(false);
-
-    if (checkRes.offline) {
-      // Offline mode registration path
-      setIsNewUser(true);
-      setStep('register');
+    if (!password) {
+      Alert.alert("Грешка", "Моля въведете парола!");
       return;
     }
 
-    if (checkRes.registered) {
-      // Login flow: existing user
-      setIsNewUser(false);
-      setLoading(true);
-      const regRes = await registerEmail(email);
-      setLoading(false);
-      
-      if (regRes.success) {
-        setSimulatedCode(regRes.code);
-        setStep('verify');
-      } else {
-        Alert.alert("Грешка", regRes.error || "Грешка при изпращане на код.");
-      }
+    setLoading(true);
+    const res = await loginPassword(email, password);
+    setLoading(false);
+
+    if (res.success) {
+      // successful login is handled by AppContext state change
     } else {
-      // Register flow: new user
-      setIsNewUser(true);
-      setStep('register');
+      Alert.alert("Грешка", res.error || "Грешка при влизане.");
     }
   };
 
   const handleRegister = async () => {
+    if (!email || !validateEmail(email)) {
+      Alert.alert("Грешка", "Моля въведете валиден имейл адрес!");
+      return;
+    }
+    if (!password || password.length < 6) {
+      Alert.alert("Грешка", "Моля въведете парола (поне 6 символа)!");
+      return;
+    }
     if (!fullname || !city || !address) {
       Alert.alert("Грешка", "Моля попълнете всички полета за доставка!");
       return;
     }
 
     setLoading(true);
-    const regRes = await registerEmail(email, fullname, city, address);
+    const res = await registerPassword(email, password, fullname, city, address);
     setLoading(false);
 
-    if (regRes.success) {
-      setSimulatedCode(regRes.code);
-      setStep('verify');
+    if (res.success) {
+      // successful register is handled by AppContext state change
     } else {
-      Alert.alert("Грешка", regRes.error || "Грешка при регистрация.");
-    }
-  };
-
-  const handleVerify = async () => {
-    if (!code || code.length !== 4) {
-      Alert.alert("Грешка", "Моля въведете 4-цифрения код!");
-      return;
-    }
-
-    setLoading(true);
-    const tempDetails = { fullname, city, address };
-    const verRes = await verifyEmailCode(email, code, simulatedCode, tempDetails);
-    setLoading(false);
-
-    if (verRes.success) {
-      Alert.alert("Успешна идентификация", "Добре дошли в WinBlitz!");
-    } else {
-      Alert.alert("Грешка", verRes.error || "Невалиден код.");
-    }
-  };
-
-  const handleGoBack = () => {
-    if (step === 'register') {
-      setStep('email');
-    } else if (step === 'verify') {
-      if (isNewUser) {
-        setStep('register');
-      } else {
-        setStep('email');
-      }
-      setCode('');
+      Alert.alert("Грешка", res.error || "Грешка при регистрация.");
     }
   };
 
@@ -145,14 +100,29 @@ export default function AuthScreen() {
 
         {/* Dynamic Card Container */}
         <View style={styles.card}>
-          {step === 'email' && (
+          
+          <View style={styles.tabsContainer}>
+            <TouchableOpacity 
+              style={[styles.tab, mode === 'login' && styles.activeTab]} 
+              onPress={() => setMode('login')}
+            >
+              <Text style={[styles.tabText, mode === 'login' && styles.activeTabText]}>Вход</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.tab, mode === 'register' && styles.activeTab]} 
+              onPress={() => setMode('register')}
+            >
+              <Text style={[styles.tabText, mode === 'register' && styles.activeTabText]}>Регистрация</Text>
+            </TouchableOpacity>
+          </View>
+
+          {mode === 'login' ? (
             <View>
-              <Text style={styles.cardTitle}>Вход / Регистрация</Text>
-              <Text style={styles.cardDesc}>Въведете имейл, за да влезете или да създадете безплатен профил.</Text>
+              <Text style={styles.cardDesc}>Въведете вашия имейл и парола, за да влезете.</Text>
               
               <TextInput 
                 style={styles.input}
-                placeholder="Имейл адрес (напр. user@mail.com)..."
+                placeholder="Имейл адрес..."
                 placeholderTextColor="#52525b"
                 keyboardType="email-address"
                 autoCapitalize="none"
@@ -160,32 +130,51 @@ export default function AuthScreen() {
                 value={email}
                 onChangeText={setEmail}
               />
+              <TextInput 
+                style={styles.input}
+                placeholder="Парола..."
+                placeholderTextColor="#52525b"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
 
               <TouchableOpacity 
                 style={styles.actionBtn} 
-                onPress={handleNextStep}
+                onPress={handleLogin}
                 disabled={loading}
               >
                 {loading ? (
                   <ActivityIndicator size="small" color="#fff" />
                 ) : (
-                  <Text style={styles.actionBtnText}>Продължи</Text>
+                  <Text style={styles.actionBtnText}>Вход</Text>
                 )}
               </TouchableOpacity>
             </View>
-          )}
-
-          {step === 'register' && (
+          ) : (
             <View>
-              <View style={styles.cardHeaderRow}>
-                <TouchableOpacity onPress={handleGoBack} style={styles.backBtn}>
-                  <Ionicons name="arrow-back" size={20} color="#a1a1aa" />
-                </TouchableOpacity>
-                <Text style={styles.cardTitle}>Нов профил</Text>
-              </View>
               <Text style={styles.cardDesc}>
                 Въведете реалните си данни за получаване на спечелените награди от Спиди/Еконт.
               </Text>
+
+              <TextInput 
+                style={styles.input}
+                placeholder="Имейл адрес..."
+                placeholderTextColor="#52525b"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={email}
+                onChangeText={setEmail}
+              />
+              <TextInput 
+                style={styles.input}
+                placeholder="Парола (минимум 6 символа)..."
+                placeholderTextColor="#52525b"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
 
               <TextInput 
                 style={styles.input}
@@ -225,44 +214,7 @@ export default function AuthScreen() {
             </View>
           )}
 
-          {step === 'verify' && (
-            <View>
-              <View style={styles.cardHeaderRow}>
-                <TouchableOpacity onPress={handleGoBack} style={styles.backBtn}>
-                  <Ionicons name="arrow-back" size={20} color="#a1a1aa" />
-                </TouchableOpacity>
-                <Text style={styles.cardTitle}>Верификация</Text>
-              </View>
-              <Text style={styles.cardDesc}>
-                Изпратихме 4-цифрен код на имейл: <Text style={styles.boldText}>{email}</Text>
-              </Text>
-
-              <TextInput 
-                style={[styles.input, styles.codeInput]}
-                placeholder="0 0 0 0"
-                placeholderTextColor="#52525b"
-                keyboardType="number-pad"
-                maxLength={4}
-                value={code}
-                onChangeText={setCode}
-              />
-
-              <TouchableOpacity 
-                style={styles.actionBtn} 
-                onPress={handleVerify}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.actionBtnText}>Потвърди код</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
         </View>
-
-        {/* Mock Email Simulator Drawer removed as requested */}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -327,26 +279,36 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-  cardHeaderRow: {
+  tabsContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  backBtn: {
-    marginRight: 10,
+    marginBottom: 20,
+    backgroundColor: '#0a051b',
+    borderRadius: 8,
     padding: 4,
   },
-  cardTitle: {
-    fontSize: 22,
-    fontWeight: '700',
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 6,
+  },
+  activeTab: {
+    backgroundColor: '#8b5cf6',
+  },
+  tabText: {
+    color: '#a1a1aa',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  activeTabText: {
     color: '#fff',
   },
   cardDesc: {
     fontSize: 14,
     color: '#a1a1aa',
-    marginTop: 8,
     marginBottom: 20,
     lineHeight: 20,
+    textAlign: 'center',
   },
   input: {
     backgroundColor: '#0a051b',
@@ -359,18 +321,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 16,
   },
-  codeInput: {
-    fontSize: 26,
-    textAlign: 'center',
-    letterSpacing: 10,
-    fontWeight: 'bold',
-    color: '#fbbf24',
-    borderColor: '#fbbf24',
-  },
-  boldText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
   actionBtn: {
     backgroundColor: '#8b5cf6',
     borderRadius: 8,
@@ -381,62 +331,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.4,
     shadowRadius: 6,
     elevation: 4,
+    marginTop: 10,
   },
   actionBtnText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 1,
-  },
-  simulatorDrawer: {
-    marginTop: 25,
-    backgroundColor: '#1b1242',
-    borderWidth: 1,
-    borderColor: '#fbbf24',
-    borderRadius: 12,
-    padding: 16,
-  },
-  simulatorHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  simulatorTitle: {
-    fontSize: 14,
-    color: '#fbbf24',
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  simulatorBody: {
-    backgroundColor: '#0d0726',
-    borderRadius: 8,
-    padding: 12,
-  },
-  simulatorText: {
-    fontSize: 12,
-    color: '#a1a1aa',
-    marginBottom: 3,
-  },
-  simulatorLabel: {
-    color: '#e4e4e7',
-    fontWeight: '500',
-  },
-  simulatorDivider: {
-    height: 1,
-    backgroundColor: '#2e2b3e',
-    marginVertical: 8,
-  },
-  simulatorMessage: {
-    fontSize: 12,
-    color: '#d4d4d8',
-    lineHeight: 18,
-  },
-  simulatorCodeText: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#fbbf24',
-    textAlign: 'center',
-    marginTop: 10,
-    letterSpacing: 3,
   }
 });

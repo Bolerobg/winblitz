@@ -197,56 +197,50 @@ export function AppProvider({ children }) {
     return fetch(`${BACKEND_URL}${endpoint}`, options);
   };
 
-  // Auth Operations
-  const checkEmail = async (email) => {
+  const registerPassword = async (email, password, fullname, city, address) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/check-email`, {
+      const res = await fetch(`${BACKEND_URL}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-      return { success: false, error: "Грешка при проверка на имейл" };
-    } catch (e) {
-      return { registered: false, offline: true };
-    }
-  };
-
-  const registerEmail = async (email, fullname, city, address) => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/register-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, fullname, city, address })
+        body: JSON.stringify({ email, password, fullname, city, address })
       });
       if (res.ok) {
         const data = await res.json();
-        return { success: true, code: data.code };
+        updateState(prev => ({
+          ...prev,
+          showTutorial: true,
+          user: {
+            ...prev.user,
+            verified: true,
+            email: data.user.email,
+            fullname: data.user.fullname,
+            city: data.user.city,
+            address: data.user.address
+          }
+        }));
+        triggerSync(data.user.email || data.user.phone);
+        return { success: true };
       } else {
         const err = await res.json();
         return { success: false, error: err.error };
       }
     } catch (e) {
-      const code = Math.floor(1000 + Math.random() * 9000).toString();
-      return { success: true, code, offline: true };
+      return { success: false, error: "Грешка при връзка със сървъра" };
     }
   };
 
-  const verifyEmailCode = async (email, code, emailSimulatedCode, tempDetails) => {
+  const loginPassword = async (email, password) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/verify-email`, {
+      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code })
+        body: JSON.stringify({ email, password })
       });
       if (res.ok) {
         const data = await res.json();
-        const isRegistering = !!tempDetails.fullname;
         updateState(prev => ({
           ...prev,
-          showTutorial: isRegistering,
+          showTutorial: false,
           user: {
             ...prev.user,
             verified: true,
@@ -257,29 +251,14 @@ export function AppProvider({ children }) {
             address: data.user.address
           }
         }));
-        triggerSync(data.user.email);
+        triggerSync(data.user.email || data.user.phone);
         return { success: true };
       } else {
-        return { success: false, error: "Невалиден верификационен код." };
+        const err = await res.json();
+        return { success: false, error: err.error };
       }
     } catch (e) {
-      if (code === emailSimulatedCode) {
-        const isRegistering = !!tempDetails.fullname;
-        updateState(prev => ({
-          ...prev,
-          showTutorial: isRegistering,
-          user: {
-            ...prev.user,
-            verified: true,
-            email,
-            fullname: tempDetails.fullname || prev.user.fullname || '',
-            city: tempDetails.city || prev.user.city || '',
-            address: tempDetails.address || prev.user.address || ''
-          }
-        }));
-        return { success: true, offline: true };
-      }
-      return { success: false, error: "Невалиден код." };
+      return { success: false, error: "Грешка при връзка със сървъра" };
     }
   };
 
@@ -424,9 +403,8 @@ export function AppProvider({ children }) {
       setAdminPassword,
       updateState,
       apiFetch,
-      checkEmail,
-      registerEmail,
-      verifyEmailCode,
+      loginPassword,
+      registerPassword,
       resetApp,
       joinLobby,
       triggerSync,

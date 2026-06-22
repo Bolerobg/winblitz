@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
+const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 const nodemailer = require('nodemailer');
@@ -265,92 +266,62 @@ app.post('/api/auth/verify-sms', async (req, res) => {
     }
 });
 
-// POST /api/auth/check-email
-app.post('/api/auth/check-email', async (req, res) => {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "Missing email" });
-    try {
-        const emailVal = email.trim().toLowerCase();
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
-        if (result.rows.length > 0) {
-            return res.json({ registered: true, verified: result.rows[0].verified });
-        }
-        res.json({ registered: false });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: err.message || "Server error" });
-    }
-});
-
-// POST /api/auth/register-email
-app.post('/api/auth/register-email', async (req, res) => {
-    const { email, fullname, city, address } = req.body;
-    if (!email) return res.status(400).json({ error: "Missing email" });
+// POST /api/auth/register
+app.post('/api/auth/register', async (req, res) => {
+    const { email, password, fullname, city, address } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
     
     try {
         const emailVal = email.trim().toLowerCase();
-        const simulatedCode = Math.floor(1000 + Math.random() * 9000).toString();
-        console.log(`[EMAIL SIMULATION] Code for ${emailVal}: ${simulatedCode}`);
-        
         let result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
-        let user;
         
         if (result.rows.length > 0) {
-            const existingUser = result.rows[0];
-            const updatedFullname = fullname || existingUser.fullname;
-            const updatedCity = city || existingUser.city;
-            const updatedAddress = address || existingUser.address;
-            
-            const updated = await pool.query(
-                `UPDATE users SET fullname = $1, city = $2, address = $3, email_code = $4, verified = FALSE 
-                 WHERE email = $5 RETURNING *`,
-                [updatedFullname, updatedCity, updatedAddress, simulatedCode, emailVal]
-            );
-            user = updated.rows[0];
-        } else {
-            const inserted = await pool.query(
-                `INSERT INTO users (email, fullname, city, address, email_code, balance, unlocked_avatars, unlocked_themes, daily_quests) 
-                 VALUES ($1, $2, $3, $4, $5, 100.00, ARRAY['👤'], ARRAY['default'], $6) RETURNING *`,
-                [emailVal, fullname, city, address, simulatedCode, JSON.stringify(buildDefaultQuests())]
-            );
-            user = inserted.rows[0];
-            
-            await pool.query(
-                'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
-                [user.id, "Начален бонус (Демо)", 100.00, "deposit"]
-            );
+            return res.status(400).json({ error: "Потребител с този имейл вече съществува." });
         }
         
-        // Send real verification email via SMTP if configured
-        await sendVerificationEmail(emailVal, simulatedCode);
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash(password, salt);
         
-        res.json({ success: true, code: simulatedCode, user });
+        const inserted = await pool.query(
+            `INSERT INTO users (email, password_hash, fullname, city, address, verified, balance, unlocked_avatars, unlocked_themes, daily_quests) 
+             VALUES ($1, $2, $3, $4, $5, TRUE, 100.00, ARRAY['👤'], ARRAY['default'], $6) RETURNING *`,
+            [emailVal, hash, fullname, city, address, JSON.stringify(buildDefaultQuests())]
+        );
+        const user = inserted.rows[0];
+        
+        await pool.query(
+            'INSERT INTO wallet_history (user_id, description, amount, type) VALUES ($1, $2, $3, $4)',
+            [user.id, "Начален бонус (Демо)", 100.00, "deposit"]
+        );
+        
+        res.json({ success: true, user });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message || "Server error" });
     }
 });
 
-// POST /api/auth/verify-email
-app.post('/api/auth/verify-email', async (req, res) => {
-    const { email, code } = req.body;
-    if (!email || !code) return res.status(400).json({ error: "Missing params" });
+// POST /api/auth/login
+app.post('/api/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required" });
     
     try {
         const emailVal = email.trim().toLowerCase();
         const result = await pool.query('SELECT * FROM users WHERE email = $1', [emailVal]);
-        if (result.rows.length === 0) return res.status(404).json({ error: "User not found" });
+        if (result.rows.length === 0) return res.status(404).json({ error: "Грешен имейл или парола." });
         
         const user = result.rows[0];
-        if (user.email_code === code) {
-            const verifiedUser = await pool.query(
-                'UPDATE users SET verified = TRUE, email_code = NULL WHERE id = $1 RETURNING *',
-                [user.id]
-            );
-            res.json({ success: true, user: verifiedUser.rows[0] });
-        } else {
-            res.status(400).json({ success: false, error: "Wrong code" });
+        if (!user.password_hash) {
+             return res.status(400).json({ error: "Този профил не е създаден с парола. Моля, свържете се с поддръжката." });
         }
+        
+        const isMatch = await bcrypt.compare(password, user.password_hash);
+        if (!isMatch) {
+            return res.status(400).json({ error: "Грешен имейл или парола." });
+        }
+        
+        res.json({ success: true, user });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message || "Server error" });
